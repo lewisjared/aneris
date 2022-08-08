@@ -23,13 +23,12 @@
 # %%
 import os
 
-import pyreadr
-import numpy as np
 import pandas as pd
-import xarray as xr
 
 import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
+
+from aneris.gridding.masks import read_mask_as_da
 
 # %%
 PROXY_DATA = os.path.join(
@@ -43,37 +42,12 @@ grid_mappings = pd.read_csv(
 grid_mappings
 
 # %%
-grid_resolution = 0.5
-lat_centers = np.arange(90 - grid_resolution / 2, -90, -grid_resolution)
-lon_centers = np.arange(
-    -180 + grid_resolution / 2, 180 + grid_resolution / 2, grid_resolution
-)
-
-
-# %%
-def read_mask_as_da(iso_code, grid_mappings):
-    iso_code = iso_code.lower()
-
-    fname = f"{PROXY_DATA}/mask/{iso_code}_mask.Rd"
-    mask = pyreadr.read_r(fname)[f"{iso_code}_mask"]
-
-    mapping = grid_mappings.loc[iso_code]
-    lats = lat_centers[int(mapping.start_row) - 1 : int(mapping.end_row)]
-    lons = lon_centers[int(mapping.start_col) - 1 : int(mapping.end_col)]
-
-    return xr.DataArray(mask, coords=(lats, lons), dims=("lat", "lon"))
-
-
-# %%
-
-
-# %%
 plt.figure(figsize=(12, 8))
 ax = plt.axes(projection=ccrs.PlateCarree())
-read_mask_as_da("usa", grid_mappings).plot.contour()
+read_mask_as_da(PROXY_DATA, "usa", grid_mappings).plot.contour()
 ax.coastlines()
 
 # %%
-read_mask_as_da("fin", grid_mappings)
+read_mask_as_da(PROXY_DATA, "fin", grid_mappings)
 
 # %%

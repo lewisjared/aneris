@@ -11,16 +11,20 @@ IAMCDataset = Union["scmdata.ScmRun", "pyam.IamDataFrame"]
 logger = logging.getLogger(__name__)
 
 
-def grid_sector(iso_list: List[str], emissions: scmdata.ScmRun, proxy: ProxyDataset):
+def grid_sector(
+    iso_list: List[str],
+    masker: MaskLoader,
+    emissions: scmdata.ScmRun,
+    proxy: ProxyDataset,
+):
     global_grid_area = 100
     flux_factor = (
         1000000000 / global_grid_area / (365 * 24 * 60 * 60)
     )  # from Mt to kg m-2 s-1
 
-    years = emissions["year"]
-
     iso_sectoral_emissions = [
-        grid_iso(iso, emissions.filter(region=iso), proxy) for iso in iso_list
+        grid_iso(masker.get_iso(iso), emissions.filter(region=iso), proxy)
+        for iso in iso_list
     ]
 
     global_emissions = aggregate(iso_sectoral_emissions)
@@ -28,12 +32,10 @@ def grid_sector(iso_list: List[str], emissions: scmdata.ScmRun, proxy: ProxyData
     return add_seasonality(global_emissions)
 
 
-def grid_iso(iso: str, emissions: scmdata.ScmRun, proxy: ProxyDataset):
-    weighted_proxy = proxy.get(iso)
-    norm_weighted_proxy = weighted_proxy / weighted_proxy.sum()
-    norm_weighted_proxy = norm_weighted_proxy.fillna(0)
+def grid_iso(mask: xr.DataArray, emissions: scmdata.ScmRun, proxy: ProxyDataset):
+    weighted_proxy = proxy.get_weighted(mask)
 
-    return emissions.get()
+    return emissions.values * weighted_proxy
 
 
 class Gridder:
@@ -54,7 +56,7 @@ class Gridder:
 
         Returns
         -------
-
+        xr.Dataset
         """
         emissions = scmdata.ScmRun(emissions.timeseries())
 
@@ -67,9 +69,9 @@ class Gridder:
             emissions = emissions.filter(region=self.mask_loader.iso_list(), keep=False)
 
         for emissions_sector in emissions.groupby(["scenario", "model", "variable"]):
-            scenario = emissions_sector.get_unique_meta("scenario")
-            model = emissions_sector.get_unique_meta("model")
-            variable = emissions_sector.get_unique_meta("variable")
+            scenario = emissions_sector.get_unique_meta("scenario", True)
+            model = emissions_sector.get_unique_meta("model", True)
+            variable = emissions_sector.get_unique_meta("variable", True)
             logger.info(f"Gridding {model} / {scenario} / {variable}")
             species, sector = self._parse_variable_name(variable)
 
@@ -79,10 +81,11 @@ class Gridder:
             # todo: check region availability
 
             proxy = ProxyDataset.load_from_proxy_file(
-                self.mask_loader, species=species, sector=sector, years=target_years
+                "", species=species, sector=sector, years=target_years
             )
 
-            res = grid_sector(regions, emissions, proxy)
+            res = grid_sector(regions, self.mask_loader, emissions, proxy)
 
     def _parse_variable_name(self, variable: str) -> (str, str):
+        # TODO: implement
         return "CO2", "AIR"

@@ -4,13 +4,13 @@ import os
 import pandas as pd
 import xarray as xr
 import pyreadr
-from typing import List
+from typing import List, Union
 from .masks import LAT_CENTERS, LON_CENTERS
 
 logger = logging.getLogger(__name__)
 
 
-def read_proxy_file(proxy_fname: str) -> xr.DataArray:
+def read_proxy_file(proxy_fname: str) -> Union[xr.DataArray, None]:
     """
     Read a proxy file from disk
 
@@ -35,7 +35,7 @@ def read_proxy_file(proxy_fname: str) -> xr.DataArray:
     """
     fname = os.path.join(proxy_fname)
     if not os.path.exists(proxy_fname):
-        raise FileNotFoundError(proxy_fname)
+        return None
     logger.debug(f"Reading {fname}")
 
     data = pyreadr.read_r(fname)
@@ -56,6 +56,57 @@ def read_proxy_file(proxy_fname: str) -> xr.DataArray:
         raise ValueError(f"Unexpected dimensionality for proxy : {data.shape}")
 
     return xr.DataArray(data, coords=coords, dims=dims)
+
+
+def load_proxy(proxy_dir: str, proxy_info: pd.DataFrame) -> xr.DataArray:
+    if len(proxy_info) > 1:
+        raise ValueError("Could not select a single proxy")
+    if len(proxy_info) == 0:
+        logger.error(f"No selected proxies. Falling back to population_2015")
+        return read_proxy_file(
+            # TODO: fix the implicit relative path in the location of the backup proxy
+            os.path.join(
+                proxy_dir,
+                "..",
+                "proxy-backup",
+                "population_2015.Rd",
+            )
+        )
+
+    proxy_info = proxy_info.squeeze()
+    proxy = read_proxy_file(os.path.join(proxy_dir, proxy_info["proxy_file"] + ".Rd"))
+
+    if proxy is None:
+        logger.error(
+            f"Could not load proxy {proxy_info['proxy_file']}. Falling back to backup"
+        )
+
+        proxy = read_proxy_file(
+            # TODO: fix the implicit relative path in the location of the backup proxy
+            os.path.join(
+                proxy_dir,
+                "..",
+                "proxy-backup",
+                proxy_info["proxybackup_file"] + ".Rd",
+            )
+        )
+    if proxy is None:
+        logger.error(
+            f"Could not load proxy {proxy_info['proxybackup_file']}. Falling back to population_2015"
+        )
+
+        proxy = read_proxy_file(
+            # TODO: fix the implicit relative path in the location of the backup proxy
+            os.path.join(
+                proxy_dir,
+                "..",
+                "proxy-backup",
+                "population_2015.Rd",
+            )
+        )
+    if proxy is None:
+        raise ValueError("Could not find any appropriate proxies")
+    return proxy
 
 
 class ProxyDataset:
@@ -84,7 +135,7 @@ class ProxyDataset:
         xr.DataArray
         """
         weighted_proxy = self.data * mask
-        norm_weighted_proxy = weighted_proxy / weighted_proxy.sum()
+        norm_weighted_proxy = weighted_proxy / weighted_proxy.sum(dim=("lat", "lon"))
         norm_weighted_proxy = norm_weighted_proxy.fillna(0)
 
         return norm_weighted_proxy
@@ -130,35 +181,12 @@ class ProxyDataset:
             (proxy_definitions.em == species) & (proxy_definitions.sector == sector)
         ]
         if not len(selected_proxies):
-            raise ValueError(f"Could not find proxy definition for {species}/{sector}")
+            logger.warning(f"Could not find proxy definition for {species}/{sector}")
 
         proxies = []
 
         for y in years:
-            proxy_fname = selected_proxies[selected_proxies.year == y]
-            if len(proxy_fname) != 1:
-                raise ValueError(
-                    f"Could not select a single proxy for {species}/{sector}/{y}"
-                )
-            proxy_fname = proxy_fname.squeeze()
-
-            try:
-                proxy = read_proxy_file(
-                    os.path.join(proxy_dir, proxy_fname["proxy_file"] + ".Rd")
-                )
-            except FileNotFoundError:
-                logger.error(
-                    f"Could not load proxy data for {species}/{sector}/{y}. Falling back to backup"
-                )
-                proxy = read_proxy_file(
-                    # TODO: fix the implicit relative path in the location of the backup proxy
-                    os.path.join(
-                        proxy_dir,
-                        "..",
-                        "proxy-backup",
-                        proxy_fname["proxybackup_file"] + ".Rd",
-                    )
-                )
+            proxy = load_proxy(proxy_dir, selected_proxies[selected_proxies.year == y])
             proxy["year"] = y
 
             proxies.append(proxy)

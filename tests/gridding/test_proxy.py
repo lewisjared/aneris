@@ -1,16 +1,13 @@
-import pytest
-
 from aneris.gridding.proxy import ProxyDataset
 import os
 
 
-def test_proxy_loading_aircraft(emissions_downscaling_archive):
-    proxy_dir = os.path.join(emissions_downscaling_archive, "gridding", "proxy-CEDS9")
+def test_proxy_loading_aircraft(grid_dir):
+    proxy_dir = os.path.join(grid_dir, "proxy-CEDS9")
 
     ds = ProxyDataset.load_from_proxy_file(
         os.path.join(
-            emissions_downscaling_archive,
-            "gridding",
+            grid_dir,
             "gridding-mappings",
             "proxy_mapping_CEDS9.csv",
         ),
@@ -24,13 +21,12 @@ def test_proxy_loading_aircraft(emissions_downscaling_archive):
     assert ds.data.shape == (2, 360, 720, 25)
 
 
-def test_proxy_loading(emissions_downscaling_archive):
-    proxy_dir = os.path.join(emissions_downscaling_archive, "gridding", "proxy-CEDS9")
+def test_proxy_loading(grid_dir):
+    proxy_dir = os.path.join(grid_dir, "proxy-CEDS9")
 
     ds = ProxyDataset.load_from_proxy_file(
         os.path.join(
-            emissions_downscaling_archive,
-            "gridding",
+            grid_dir,
             "gridding-mappings",
             "proxy_mapping_CEDS9.csv",
         ),

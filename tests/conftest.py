@@ -10,12 +10,17 @@ import pytest
 
 
 @pytest.fixture()
+def test_data_dir() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "test_data"))
+
+
+@pytest.fixture()
 def raw_data_dir() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "raw"))
 
 
 @pytest.fixture
-def emissions_downscaling_archive(raw_data_dir):
+def emissions_downscaling_archive(raw_data_dir) -> str:
     dir_name = os.path.join(raw_data_dir, "emissions_downscaling_archive")
 
     if not os.path.exists(dir_name):
@@ -24,3 +29,8 @@ def emissions_downscaling_archive(raw_data_dir):
             "Download from https://zenodo.org/record/2538194"
         )
     return dir_name
+
+
+@pytest.fixture
+def grid_dir(emissions_downscaling_archive) -> str:
+    return os.path.join(emissions_downscaling_archive, "gridding")

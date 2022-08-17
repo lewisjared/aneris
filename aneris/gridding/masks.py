@@ -64,4 +64,4 @@ class MaskLoader:
 
         fnames = glob(os.path.join(self.grid_dir, "mask", "*.Rd"))
 
-        return [f.split("_")[0] for f in fnames]
+        return [os.path.basename(f).split("_")[0].upper() for f in fnames]

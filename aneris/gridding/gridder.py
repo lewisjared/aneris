@@ -1,3 +1,4 @@
+import pint
 import xarray as xr
 import os
 from typing import List, Union
@@ -5,11 +6,51 @@ from aneris.gridding.proxy import ProxyDataset
 from aneris.gridding.masks import MaskLoader
 import scmdata
 import logging
-from aneris.unit_registry import unit_registry
+from aneris.unit_registry import ur
 
 IAMCDataset = Union["scmdata.ScmRun", "pyam.IamDataFrame"]
 
 logger = logging.getLogger(__name__)
+
+
+def convert_to_target_unit(
+    initial_unit: Union[str, pint.Unit], target_unit: Union[str, pint.Unit]
+) -> pint.Quantity:
+    """
+    Calculate the scale factor required to convert between units
+
+    This function supports converting a subset of the input units dimensions which
+    is helpful in situations where arbitary dimensions can be provided i.e. Mt X/yr
+    where X could be a range of species.
+
+    >>> value = ur.Quantity(12, "Mt CH4/yr")
+    >>> scale_factor = convert_to_target_unit(value.units, target_unit="kg")
+    >>> ur.Quantity(value.m * scale_factor.m, scale_factor.u)
+
+    Parameters
+    ----------
+    initial_unit
+        Units of input
+    target_unit
+        The expected output
+
+        Any dimensions present in the initial_unit, but not in the target unit will
+        be kept the same.
+
+    Returns
+    -------
+    pint.Quantity
+        The magnitude of the quantity represents the required scale factor
+        The units of the quantity represent the resulting unit
+    """
+    start = ur.Quantity(1, initial_unit)
+
+    # Get pint to find the conversion factor for you
+    start_mass_in_kg = (start / ur.Quantity(1, target_unit)).to_reduced_units()
+
+    # Put the intended mass units back in
+    start_mass_in_kg_correct_units = start_mass_in_kg * ur.Quantity(1, target_unit)
+    return start_mass_in_kg_correct_units
 
 
 def add_seasonality(data: xr.DataArray) -> xr.DataArray:
@@ -26,7 +67,7 @@ def grid_sector(
     proxy: ProxyDataset,
 ):
     global_grid_area = masker.latitude_grid_size()
-    emissions_units = unit_registry.parse_units(emissions.get_unique_meta("unit", True))
+    emissions_units: pint.Unit = ur(emissions.get_unique_meta("unit", True))
 
     iso_sectoral_emissions = [
         grid_iso(iso, masker.get_iso(iso), emissions.filter(region=iso), proxy)
@@ -37,13 +78,11 @@ def grid_sector(
     global_emissions = xr.concat(iso_sectoral_emissions, dim="region").sum(dim="region")
 
     # Calculate factor to go from Mt X year-1 km-2 to kg m-2 s-1
-    flux_factor = (
-        (emissions_units / unit_registry("km^2"))
-        .to(f"kg {species} km^-2 s^-1")
-        .magnitude
+    flux_factor = convert_to_target_unit(
+        (emissions_units / ur("km^2")), f"kg km^-2 s^-1"
     )
-    global_emissions = global_emissions / global_grid_area * flux_factor
-    global_emissions["unit"] = f"kg {species} km^-2 s^-1"
+    global_emissions = global_emissions / global_grid_area * flux_factor.m
+    global_emissions["unit"] = flux_factor.u
 
     return add_seasonality(global_emissions)
 
@@ -73,6 +112,7 @@ class Gridder:
         grid_dir: str,
         proxy_dir: Union[str, None] = None,
         proxy_definition_file: Union[str, None] = None,
+        sectoral_map="CEDS16",
     ):
         self.mask_loader = MaskLoader(grid_dir)
 
@@ -80,12 +120,12 @@ class Gridder:
             proxy_definition_file = os.path.join(
                 grid_dir,
                 "gridding-mappings",
-                "proxy_mapping_CEDS16.csv",
+                f"proxy_mapping_{sectoral_map}.csv",
             )
         self.proxy_definition_file = proxy_definition_file
 
         if proxy_dir is None:
-            proxy_dir = os.path.join(grid_dir, "proxy-CEDS16")
+            proxy_dir = os.path.join(grid_dir, f"proxy-{sectoral_map}")
         self.proxy_dir = proxy_dir
 
     def grid_sector(self, model, scenario, variable, emissions) -> xr.DataArray:

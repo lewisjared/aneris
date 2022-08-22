@@ -14,16 +14,22 @@
 # ---
 
 # %%
+import os
 from aneris.gridding import Gridder
+import scmdata
 import logging
 
 # %%
 logging.basicConfig(level=logging.INFO)
 
 # %%
+test_data_dir = os.path.join("..", "..", "tests", "test_data", "gridding")
+
+# %%
+
+# %%
+input_emissions = scmdata.ScmRun(os.path.join(test_data_dir, "country_timeseries.csv"))
+
+# %%
+
 g = Gridder()
-
-# %%
-input_emissions = scmdata.ScmRun("")
-
-# %%

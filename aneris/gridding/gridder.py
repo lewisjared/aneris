@@ -5,31 +5,45 @@ from aneris.gridding.proxy import ProxyDataset
 from aneris.gridding.masks import MaskLoader
 import scmdata
 import logging
+from aneris.unit_registry import unit_registry
 
 IAMCDataset = Union["scmdata.ScmRun", "pyam.IamDataFrame"]
 
 logger = logging.getLogger(__name__)
 
 
+def add_seasonality(data: xr.DataArray) -> xr.DataArray:
+    # TODO: implement seasonality
+
+    return data
+
+
 def grid_sector(
+    species: str,
     iso_list: List[str],
     masker: MaskLoader,
     emissions: scmdata.ScmRun,
     proxy: ProxyDataset,
 ):
-    global_grid_area = 100
-    flux_factor = (
-        1000000000 / global_grid_area / (365 * 24 * 60 * 60)
-    )  # from Mt to kg m-2 s-1
+    global_grid_area = masker.latitude_grid_size()
+    emissions_units = unit_registry.parse_units(emissions.get_unique_meta("unit", True))
 
     iso_sectoral_emissions = [
-        grid_iso(masker.get_iso(iso), emissions.filter(region=iso) / 1000, proxy)
+        grid_iso(iso, masker.get_iso(iso), emissions.filter(region=iso), proxy)
         for iso in iso_list
     ]
 
     # Aggregate and scale to area
     global_emissions = xr.concat(iso_sectoral_emissions, dim="region").sum(dim="region")
-    global_emissions = global_emissions * flux_factor
+
+    # Calculate factor to go from Mt X year-1 km-2 to kg m-2 s-1
+    flux_factor = (
+        (emissions_units / unit_registry("km^2"))
+        .to(f"kg {species} km^-2 s^-1")
+        .magnitude
+    )
+    global_emissions = global_emissions / global_grid_area * flux_factor
+    global_emissions["unit"] = f"kg {species} km^-2 s^-1"
 
     return add_seasonality(global_emissions)
 
@@ -74,6 +88,32 @@ class Gridder:
             proxy_dir = os.path.join(grid_dir, "proxy-CEDS16")
         self.proxy_dir = proxy_dir
 
+    def grid_sector(self, model, scenario, variable, emissions) -> xr.DataArray:
+        species, sector = self._parse_variable_name(variable)
+
+        target_years = emissions["year"]
+        regions = emissions.get_unique_meta("region")
+
+        # todo: check region availability
+
+        proxy_dataset = ProxyDataset.load_from_proxy_file(
+            self.proxy_definition_file,
+            self.proxy_dir,
+            species=species,
+            sector=sector,
+            years=target_years,
+        )
+
+        gridded_sector = grid_sector(
+            species, regions, self.mask_loader, emissions, proxy_dataset
+        )
+        gridded_sector["scenario"] = scenario
+        gridded_sector["model"] = model
+        gridded_sector["species"] = species
+        gridded_sector["sector"] = sector
+
+        return gridded_sector
+
     def grid(self, emissions: Union[IAMCDataset, "str"], **kwargs) -> xr.Dataset:
         """
         Attempt to grid a set of emissions
@@ -104,29 +144,31 @@ class Gridder:
         if len(emissions) == 0:
             raise ValueError("No emissions remain to be gridded")
 
-        for emissions_sector in emissions.groupby(["scenario", "model", "variable"]):
-            scenario = emissions_sector.get_unique_meta("scenario", True)
-            model = emissions_sector.get_unique_meta("model", True)
-            variable = emissions_sector.get_unique_meta("variable", True)
-            logger.info(f"Gridding {model} / {scenario} / {variable}")
-            species, sector = self._parse_variable_name(variable)
+        result = xr.Dataset()
 
-            target_years = emissions_sector["year"]
-            regions = emissions_sector.get_unique_meta("region")
+        for emissions_variable in emissions.groupby(["variable"]):
+            grids = []
+            variable = emissions_variable.get_unique_meta("variable", True)
 
-            # todo: check region availability
+            for emissions_sector in emissions_variable.groupby(["scenario", "model"]):
+                scenario = emissions_sector.get_unique_meta("scenario", True)
+                model = emissions_sector.get_unique_meta("model", True)
 
-            proxy_dataset = ProxyDataset.load_from_proxy_file(
-                self.proxy_definition_file,
-                self.proxy_dir,
-                species=species,
-                sector=sector,
-                years=target_years,
+                logger.info(f"Gridding {model} / {scenario} / {variable}")
+                res = self.grid_sector(
+                    model=model,
+                    scenario=scenario,
+                    variable=variable,
+                    emissions=emissions_sector,
+                )
+
+                grids.append(res)
+
+            result[variable] = xr.concat(
+                grids, dim="run_id", coords=["scenario", "model"]
             )
 
-            res = grid_sector(
-                regions, self.mask_loader, emissions_sector, proxy_dataset
-            )
+        return result
 
     def _parse_variable_name(self, variable: str) -> (str, str):
         toks = variable.split("|")

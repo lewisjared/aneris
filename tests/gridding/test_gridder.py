@@ -20,4 +20,5 @@ def test_gridder_setup(grid_dir):
 def test_gridder_grid(grid_dir, country_emissions):
     gridder = Gridder(grid_dir=grid_dir)
 
-    gridder.grid(country_emissions)
+    res = gridder.grid(country_emissions)
+    pass

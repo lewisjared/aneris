@@ -1,5 +1,6 @@
-from aneris.gridding.proxy import ProxyDataset
 import os
+
+from aneris.gridding.proxy import ProxyDataset
 
 
 def test_proxy_loading_aircraft(grid_dir):

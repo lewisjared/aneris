@@ -1,11 +1,13 @@
-import pint
-import xarray as xr
+import logging
 import os
 from typing import List, Union
-from aneris.gridding.proxy import ProxyDataset
-from aneris.gridding.masks import MaskLoader
+
+import pint
 import scmdata
-import logging
+import xarray as xr
+
+from aneris.gridding.masks import MaskLoader
+from aneris.gridding.proxy import ProxyDataset
 from aneris.unit_registry import ur
 
 IAMCDataset = Union["scmdata.ScmRun", "pyam.IamDataFrame"]
@@ -79,10 +81,10 @@ def grid_sector(
 
     # Calculate factor to go from Mt X year-1 km-2 to kg m-2 s-1
     flux_factor = convert_to_target_unit(
-        (emissions_units / ur("km^2")), f"kg km^-2 s^-1"
+        (emissions_units / ur("km^2")), f"kg m^-2 s^-1"
     )
     global_emissions = global_emissions / global_grid_area * flux_factor.m
-    global_emissions["unit"] = flux_factor.u
+    global_emissions["unit"] = str(flux_factor.u)
 
     return add_seasonality(global_emissions)
 
@@ -128,7 +130,32 @@ class Gridder:
             proxy_dir = os.path.join(grid_dir, f"proxy-{sectoral_map}")
         self.proxy_dir = proxy_dir
 
-    def grid_sector(self, model, scenario, variable, emissions) -> xr.DataArray:
+    def grid_sector(
+        self,
+        model: str,
+        scenario: str,
+        variable: str,
+        emissions: scmdata.ScmRun,
+    ) -> xr.DataArray:
+        """
+        Grid an individual sector
+
+        Parameters
+        ----------
+        model : str
+        scenario : str
+        variable : str
+            Used to define the gas and sector.
+            Should match the form: "*|{variable}|{sector}"
+        emissions : scmdata.ScmRun
+            Emissions timeseries for a single model, scenario and sector
+
+            Should contain the timeseries for the regions of interest
+
+        Returns
+        -------
+        xr.DataArray
+        """
         species, sector = self._parse_variable_name(variable)
 
         target_years = emissions["year"]
@@ -160,7 +187,9 @@ class Gridder:
 
         Parameters
         ----------
-        emissions : scmdata.ScmRun or pyam.IamDataFrame
+        emissions : scmdata.ScmRun or pyam.IamDataFrame or str
+
+            If a string is provided, the emissions input will be loaded from disk.
 
         Returns
         -------

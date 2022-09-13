@@ -62,7 +62,7 @@ def main():
     classifiers = [
         "License :: OSI Approved :: Apache Software License",
     ]
-    packages = find_packages("aneris")
+    packages = find_packages(".", include="aneris*")
     pack_dir = {
         "aneris": "aneris",
     }

@@ -1,12 +1,9 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-import glob
-import os
-import shutil
 import versioneer
 
-from setuptools import setup, Command
+from setuptools import setup, Command, find_packages
 from subprocess import call
 
 
@@ -65,9 +62,7 @@ def main():
     classifiers = [
         "License :: OSI Approved :: Apache Software License",
     ]
-    packages = [
-        "aneris",
-    ]
+    packages = find_packages("aneris")
     pack_dir = {
         "aneris": "aneris",
     }
@@ -102,7 +97,7 @@ def main():
         "install_requires": install_requirements,
         "extras_require": extra_requirements,
     }
-    rtn = setup(**setup_kwargs)
+    return setup(**setup_kwargs)
 
 
 if __name__ == "__main__":

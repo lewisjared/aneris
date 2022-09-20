@@ -11,54 +11,6 @@ from .masks import LAT_CENTERS, LON_CENTERS
 logger = logging.getLogger(__name__)
 
 
-def read_proxy_file(proxy_fname: str) -> Union[xr.DataArray, None]:
-    """
-    Read a proxy file from disk
-
-    We are using the existing proxy data from the Feng et al zenodo archive for now.
-    These data are stored as Rd files (a proprietary format from R), but can be later
-    expanded to also use proxies calculated as part of aneris.
-
-    Parameters
-    ----------
-    proxy_fname : str
-        Path to the proxy data
-
-    Raises
-    ------
-    FileNotFoundError
-        Requested proxy file cannot be found
-    Returns
-    -------
-    xr.DataArray
-        Proxy data augmented with latitude and longitude coordinates
-
-    """
-    fname = os.path.join(proxy_fname)
-    if not os.path.exists(proxy_fname):
-        return None
-    logger.debug(f"Reading {fname}")
-
-    data = pyreadr.read_r(fname)
-    assert len(data) == 1
-    data = data[list(data.keys())[0]]
-
-    if data.ndim == 2:
-        coords, dims = (LAT_CENTERS, LON_CENTERS), ("lat", "lon")
-    elif data.ndim == 3:
-        # AIR data also contain a y dimension
-        levels = range(data.shape[2])
-        coords, dims = (LAT_CENTERS, LON_CENTERS, levels), (
-            "lat",
-            "lon",
-            "level",
-        )
-    else:
-        raise ValueError(f"Unexpected dimensionality for proxy : {data.shape}")
-
-    return xr.DataArray(data, coords=coords, dims=dims)
-
-
 def load_proxy(proxy_dir: str, proxy_info: pd.DataFrame) -> xr.DataArray:
     if len(proxy_info) > 1:
         raise ValueError("Could not select a single proxy")

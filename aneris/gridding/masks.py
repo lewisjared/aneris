@@ -111,19 +111,6 @@ def grid_cell_areas(lon1d, lat1d, radius=EARTH_RADIUS):
     return area
 
 
-def read_mask_as_da(grid_dir, iso_code, grid_mappings):
-    iso_code = iso_code.lower()
-
-    fname = f"{grid_dir}/mask/{iso_code}_mask.Rd"
-    mask = pyreadr.read_r(fname)[f"{iso_code}_mask"]
-
-    mapping = grid_mappings.loc[iso_code]
-    lats = LAT_CENTERS[int(mapping.start_row) - 1 : int(mapping.end_row)]
-    lons = LON_CENTERS[int(mapping.start_col) - 1 : int(mapping.end_col)]
-
-    return xr.DataArray(mask, coords=(lats, lons), dims=("lat", "lon"))
-
-
 class MaskLoader:
     """
     Loads and processes country masks

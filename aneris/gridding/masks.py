@@ -145,6 +145,9 @@ class MaskLoader:
         ).set_index("iso")
 
     def get_iso(self, iso_code: str) -> xr.DataArray:
+        if iso_code.upper() == "WORLD":
+            return 1
+
         return read_mask_as_da(
             self.grid_dir, iso_code, grid_mappings=self.grid_mappings
         )

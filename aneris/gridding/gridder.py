@@ -115,8 +115,10 @@ class Gridder:
         proxy_dir: Union[str, None] = None,
         proxy_definition_file: Union[str, None] = None,
         sectoral_map="CEDS16",
+        global_sectors=("Aircraft", "International Shipping")
     ):
         self.mask_loader = MaskLoader(grid_dir)
+        self.global_sectors = global_sectors
 
         if proxy_definition_file is None:
             proxy_definition_file = os.path.join(
@@ -159,9 +161,18 @@ class Gridder:
         species, sector = self._parse_variable_name(variable)
 
         target_years = emissions["year"]
-        regions = emissions.get_unique_meta("region")
 
-        # todo: check region availability
+        if sector in self.global_sectors:
+            regions = ["World"]
+        else:
+            regions = self.mask_loader.iso_list()
+
+        # Check region availability
+        available_regions = emissions.get_unique_meta("region")
+        missing_regions = set(regions) - set(available_regions)
+        if missing_regions:
+            logger.warning(f"Missing {missing_regions} regions from gridding {species} / {sector}")
+            available_regions = list(set(available_regions) - missing_regions)
 
         proxy_dataset = ProxyDataset.load_from_proxy_file(
             self.proxy_definition_file,
@@ -172,7 +183,7 @@ class Gridder:
         )
 
         gridded_sector = grid_sector(
-            species, regions, self.mask_loader, emissions, proxy_dataset
+            species, available_regions, self.mask_loader, emissions, proxy_dataset
         )
         gridded_sector["scenario"] = scenario
         gridded_sector["model"] = model
@@ -201,14 +212,15 @@ class Gridder:
             emissions = scmdata.ScmRun(emissions.timeseries())
 
         # Remove unknown regions
+        expected_regions = self.mask_loader.iso_list() + ["World"]
         unknown_regions = emissions.filter(
-            region=self.mask_loader.iso_list(), keep=False
+            region=expected_regions, keep=False
         )
         if len(unknown_regions):
             logger.warning(
                 f"Dropping unknown regions: {unknown_regions.get_unique_meta('region')}"
             )
-            emissions = emissions.filter(region=self.mask_loader.iso_list())
+            emissions = emissions.filter(region=expected_regions)
 
         if len(emissions) == 0:
             raise ValueError("No emissions remain to be gridded")

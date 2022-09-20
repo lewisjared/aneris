@@ -29,6 +29,8 @@ REQUIREMENTS = [
 
 EXTRA_REQUIREMENTS = {
     "tests": ["pytest", "coverage", "coveralls", "pytest", "pytest-cov", "black"],
+    "gridding": ["xarray", "netCDF4"],
+    "notebooks": ["notebook", "jupytext",],
     "deploy": ["twine", "setuptools", "wheel"],
     "units": ["openscm-units"],
 }

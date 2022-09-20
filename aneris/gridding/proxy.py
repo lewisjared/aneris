@@ -1,12 +1,9 @@
 import logging
 import os
-from typing import List, Union
+from typing import List
 
 import pandas as pd
-import pyreadr
 import xarray as xr
-
-from .masks import LAT_CENTERS, LON_CENTERS
 
 logger = logging.getLogger(__name__)
 

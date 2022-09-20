@@ -3,15 +3,8 @@ from glob import glob
 from typing import List
 
 import numpy as np
-import pandas as pd
-import pyreadr
 import xarray as xr
 
-GRID_RESOLUTION = 0.5
-LAT_CENTERS = np.arange(90 - GRID_RESOLUTION / 2, -90, -GRID_RESOLUTION)
-LON_CENTERS = np.arange(
-    -180 + GRID_RESOLUTION / 2, 180 + GRID_RESOLUTION / 2, GRID_RESOLUTION
-)
 DEFAULT_ISO_LIST = []
 
 EARTH_RADIUS = 6371000.0  # m
@@ -121,22 +114,14 @@ class MaskLoader:
 
     def __init__(self, grid_dir):
         self.grid_dir = grid_dir
-        self.grid_mappings = self._read_grid_mappings()
 
-    def _read_grid_mappings(self):
-        return pd.read_csv(
-            # TODO: link to config
-            os.path.join(
-                self.grid_dir, "gridding-mappings", "country_location_index_05.csv"
-            )
-        ).set_index("iso")
 
     def get_iso(self, iso_code: str) -> xr.DataArray:
         if iso_code.upper() == "WORLD":
             return 1
 
         return read_mask_as_da(
-            self.grid_dir, iso_code, grid_mappings=self.grid_mappings
+            self.grid_dir, iso_code,
         )
 
     def iso_list(self) -> List[str]:

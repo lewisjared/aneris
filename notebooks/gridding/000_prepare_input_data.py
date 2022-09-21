@@ -42,9 +42,7 @@ import matplotlib.pyplot as plt
 
 # %%
 DATA_DIR = os.path.join("..", "..", "data")
-ZENODO_DATA_ARCHIVE = os.path.join(
-    DATA_DIR, "raw", "emissions_downscaling_archive"
-)
+ZENODO_DATA_ARCHIVE = os.path.join(DATA_DIR, "raw", "emissions_downscaling_archive")
 RAW_GRIDDING_DIR = os.path.join(ZENODO_DATA_ARCHIVE, "gridding")
 GRID_RESOLUTION = 0.5
 LAT_CENTERS = np.arange(90 - GRID_RESOLUTION / 2, -90, -GRID_RESOLUTION)
@@ -72,9 +70,9 @@ def read_mask_as_da(grid_dir, iso_code, grid_mappings):
     mapping = grid_mappings.loc[iso_code]
     lats = LAT_CENTERS[int(mapping.start_row) - 1 : int(mapping.end_row)]
     lons = LON_CENTERS[int(mapping.start_col) - 1 : int(mapping.end_col)]
-    
+
     da = xr.DataArray(mask, coords=(lats, lons), dims=("lat", "lon"))
-    
+
     da.attrs["region"] = iso_code
     da.attrs["source"] = fname
     da.attrs["history"] = f"read_mask_as_da {fname}"
@@ -127,6 +125,7 @@ def read_proxy_file(proxy_fname: str) -> Union[xr.DataArray, None]:
 
     return xr.DataArray(data, coords=coords, dims=dims)
 
+
 # %%
 plt.figure(figsize=(12, 8))
 read_mask_as_da(RAW_GRIDDING_DIR, "usa", grid_mappings).plot.contour()
@@ -151,12 +150,11 @@ mask_dir = os.path.join(output_grid_dir, "masks")
 
 if os.path.exists(mask_dir):
     shutil.rmtree(mask_dir)
-    
+
 os.makedirs(mask_dir)
 
 for code in country_codes:
     mask = read_mask_as_da(RAW_GRIDDING_DIR, code, grid_mappings)
-    
     mask.to_netcdf(os.path.join(mask_dir, f"mask_{code.upper()}.nc"))
 
 # %% [markdown]
@@ -170,10 +168,29 @@ for code in country_codes:
 # * proxy-backups
 
 # %%
-fnames = glob(os.path.join(RAW_GRIDDING_DIR, "proxy", "*.Rd"))
+proxy_dirs = ["proxy-CEDS9", "proxy-CEDS16", "proxy-backups"]
+
 
 # %%
-read_proxy_file(os.path.join(RAW_GRIDDING_DIR, "proxy-backup", "SO2_2000_INDC.Rd")).plot(robust=True)
+for proxy_dir in proxy_dirs:
+    output_proxy_dir = os.path.join(output_grid_dir, "proxy", proxy_dir)
+    if os.path.exists(output_proxy_dir):
+        shutil.rmtree(output_proxy_dir)
+
+    os.makedirs(output_proxy_dir)
+
+    fnames = glob(os.path.join(RAW_GRIDDING_DIR, proxy_dir, "*.Rd"))
+    for fname in fnames:
+        proxy = read_proxy_file(fname)
+        fname_out, _ = os.path.splitext(os.path.basename(fname))
+
+        variable, sector, year = fname_out.split("_")
+        proxy.attrs["source"] = fname
+        proxy.attrs["sector"] = sector
+        proxy.attrs["year"] = year
+
+        proxy.to_dataset(name=variable).to_netcdf(
+            os.path.join(output_proxy_dir, f"{fname_out}.nc")
+        )
 
 # %%
-read_proxy_file(os.path.join(RAW_GRIDDING_DIR, "proxy-backup", "SO2_2000_INDC.Rd")).plot(robust=True)

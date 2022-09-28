@@ -5,9 +5,14 @@ from typing import List
 import numpy as np
 import xarray as xr
 
-DEFAULT_ISO_LIST = []
-
 EARTH_RADIUS = 6371000.0  # m
+
+
+def get_grid_centers(resolution):
+    lat_centers = np.arange(90 - resolution / 2, -90, -resolution)
+    lon_centers = np.arange(-180 + resolution / 2, 180 + resolution / 2, resolution)
+
+    return lat_centers, lon_centers
 
 
 def _guess_bounds(points, bound_position=0.5):
@@ -104,6 +109,12 @@ def grid_cell_areas(lon1d, lat1d, radius=EARTH_RADIUS):
     return area
 
 
+def read_mask(grid_dir: str, iso_code: str) -> xr.DataArray:
+    fname = f"mask_{iso_code.upper()}.nc"
+
+    return xr.load_dataarray(os.path.join(grid_dir, "masks", fname))
+
+
 class MaskLoader:
     """
     Loads and processes country masks
@@ -115,13 +126,13 @@ class MaskLoader:
     def __init__(self, grid_dir):
         self.grid_dir = grid_dir
 
-
     def get_iso(self, iso_code: str) -> xr.DataArray:
         if iso_code.upper() == "WORLD":
             return 1
 
-        return read_mask_as_da(
-            self.grid_dir, iso_code,
+        return read_mask(
+            self.grid_dir,
+            iso_code,
         )
 
     def iso_list(self) -> List[str]:
@@ -133,14 +144,16 @@ class MaskLoader:
         list of str
         """
 
-        fnames = glob(os.path.join(self.grid_dir, "mask", "*.Rd"))
+        fnames = glob(os.path.join(self.grid_dir, "masks", "*.nc"))
 
-        return [os.path.basename(f).split("_")[0].upper() for f in fnames]
+        return [os.path.basename(f).split("_")[1].upper() for f in fnames]
 
     def latitude_grid_size(self) -> xr.DataArray:
+        lon_centers, lat_centers = get_grid_centers(0.5)
+
         return xr.DataArray(
-            grid_cell_areas(LON_CENTERS[:2], LAT_CENTERS)[:, 0],
-            coords=(LAT_CENTERS,),
+            grid_cell_areas(lon_centers[:2], lat_centers)[:, 0],
+            coords=(lat_centers,),
             dims=("lat",),
             attrs={"units": "km ^ 2"},
         )

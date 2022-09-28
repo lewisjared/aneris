@@ -194,3 +194,34 @@ for proxy_dir in proxy_dirs:
         )
 
 # %%
+
+# Seasonality
+
+output_seasonality_dir = os.path.join(output_grid_dir, "seasonality", proxy_dir)
+if os.path.exists(output_seasonality_dir):
+    shutil.rmtree(output_seasonality_dir)
+
+os.makedirs(output_seasonality_dir)
+fnames = glob(os.path.join(RAW_GRIDDING_DIR, "seasonality-CEDS9", "*.Rd"))
+
+for fname in fnames:
+    try:
+        proxy = read_proxy_file(fname)
+    except pyreadr.LibrdataError:
+        print(f"failed to read {fname}")
+        continue
+
+    toks = os.path.basename(fname).split("_")
+    proxy.attrs["source"] = fname
+    proxy.attrs["sector"] = toks[0]
+
+    if len(toks) == 3:
+        variable = toks[1]
+    else:
+        variable = "ALL"
+    proxy.attrs["sector"] = variable
+    fname_out = f"{toks[0]}_{variable}_seasonality.nc"
+
+    proxy.to_dataset(name=variable).to_netcdf(
+        os.path.join(output_seasonality_dir, fname_out)
+    )

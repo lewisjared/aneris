@@ -197,7 +197,7 @@ for proxy_dir in proxy_dirs:
 
 # Seasonality
 
-output_seasonality_dir = os.path.join(output_grid_dir, "seasonality", proxy_dir)
+output_seasonality_dir = os.path.join(output_grid_dir, "seasonality")
 if os.path.exists(output_seasonality_dir):
     shutil.rmtree(output_seasonality_dir)
 

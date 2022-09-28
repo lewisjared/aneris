@@ -33,7 +33,7 @@ def test_gridder_setup(grid_dir):
 
 @mock.patch.object(Gridder, "grid_sector")
 def test_gridder_grid(mock_grid_sector, grid_dir, country_emissions):
-    mock_grid_sector.return_value = xr.DataArray(np.zeros())
+    mock_grid_sector.return_value = xr.DataArray(np.zeros(1))
 
     gridder = Gridder(grid_dir=grid_dir)
 

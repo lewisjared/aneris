@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import List
+from typing import List, Optional
 
 import pandas as pd
 import xarray as xr
@@ -8,20 +8,25 @@ import xarray as xr
 logger = logging.getLogger(__name__)
 
 
+def read_proxy_file(fname: str) -> Optional[xr.DataArray]:
+    if not os.path.exists(fname):
+        return None
+
+    return xr.load_dataarray(fname)
+
+
 def load_proxy(proxy_dir: str, proxy_info: pd.DataFrame) -> xr.DataArray:
     if len(proxy_info) > 1:
         raise ValueError("Could not select a single proxy")
+
+    fallback_proxy = os.path.join(
+        proxy_dir,
+        "proxy-backup",
+        "population_2015.Rd",
+    )
     if len(proxy_info) == 0:
         logger.error(f"No selected proxies. Falling back to population_2015")
-        return read_proxy_file(
-            # TODO: fix the implicit relative path in the location of the backup proxy
-            os.path.join(
-                proxy_dir,
-                "..",
-                "proxy-backup",
-                "population_2015.Rd",
-            )
-        )
+        return read_proxy_file(fallback_proxy)
 
     proxy_info = proxy_info.squeeze()
     proxy = read_proxy_file(os.path.join(proxy_dir, proxy_info["proxy_file"] + ".Rd"))
@@ -32,10 +37,8 @@ def load_proxy(proxy_dir: str, proxy_info: pd.DataFrame) -> xr.DataArray:
         )
 
         proxy = read_proxy_file(
-            # TODO: fix the implicit relative path in the location of the backup proxy
             os.path.join(
                 proxy_dir,
-                "..",
                 "proxy-backup",
                 proxy_info["proxybackup_file"] + ".Rd",
             )
@@ -45,15 +48,7 @@ def load_proxy(proxy_dir: str, proxy_info: pd.DataFrame) -> xr.DataArray:
             f"Could not load proxy {proxy_info['proxybackup_file']}. Falling back to population_2015"
         )
 
-        proxy = read_proxy_file(
-            # TODO: fix the implicit relative path in the location of the backup proxy
-            os.path.join(
-                proxy_dir,
-                "..",
-                "proxy-backup",
-                "population_2015.Rd",
-            )
-        )
+        proxy = read_proxy_file(fallback_proxy)
     if proxy is None:
         raise ValueError("Could not find any appropriate proxies")
     return proxy

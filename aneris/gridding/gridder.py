@@ -112,11 +112,11 @@ class Gridder:
     def __init__(
         self,
         grid_dir: str,
-        proxy_dir: Union[str, None] = None,
         proxy_definition_file: Union[str, None] = None,
         sectoral_map="CEDS16",
-        global_sectors=("Aircraft", "International Shipping")
+        global_sectors=("Aircraft", "International Shipping"),
     ):
+        self.grid_dir = grid_dir
         self.mask_loader = MaskLoader(grid_dir)
         self.global_sectors = global_sectors
 
@@ -127,10 +127,6 @@ class Gridder:
                 f"proxy_mapping_{sectoral_map}.csv",
             )
         self.proxy_definition_file = proxy_definition_file
-
-        if proxy_dir is None:
-            proxy_dir = os.path.join(grid_dir, f"proxy-{sectoral_map}")
-        self.proxy_dir = proxy_dir
 
     def grid_sector(
         self,
@@ -171,12 +167,14 @@ class Gridder:
         available_regions = emissions.get_unique_meta("region")
         missing_regions = set(regions) - set(available_regions)
         if missing_regions:
-            logger.warning(f"Missing {missing_regions} regions from gridding {species} / {sector}")
+            logger.warning(
+                f"Missing {missing_regions} regions from gridding {species} / {sector}"
+            )
             available_regions = list(set(available_regions) - missing_regions)
 
         proxy_dataset = ProxyDataset.load_from_proxy_file(
             self.proxy_definition_file,
-            self.proxy_dir,
+            os.path.join(self.grid_dir, "proxies"),
             species=species,
             sector=sector,
             years=target_years,
@@ -213,9 +211,7 @@ class Gridder:
 
         # Remove unknown regions
         expected_regions = self.mask_loader.iso_list() + ["World"]
-        unknown_regions = emissions.filter(
-            region=expected_regions, keep=False
-        )
+        unknown_regions = emissions.filter(region=expected_regions, keep=False)
         if len(unknown_regions):
             logger.warning(
                 f"Dropping unknown regions: {unknown_regions.get_unique_meta('region')}"

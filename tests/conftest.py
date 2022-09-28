@@ -19,6 +19,13 @@ def raw_data_dir() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "raw"))
 
 
+@pytest.fixture()
+def processed_data_dir() -> str:
+    return os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "data", "processed")
+    )
+
+
 @pytest.fixture
 def emissions_downscaling_archive(raw_data_dir) -> str:
     dir_name = os.path.join(raw_data_dir, "emissions_downscaling_archive")
@@ -32,5 +39,11 @@ def emissions_downscaling_archive(raw_data_dir) -> str:
 
 
 @pytest.fixture
-def grid_dir(emissions_downscaling_archive) -> str:
-    return os.path.join(emissions_downscaling_archive, "gridding")
+def grid_dir(processed_data_dir, emissions_downscaling_archive) -> str:
+    dir_name = os.path.join(processed_data_dir, "gridding")
+
+    if not os.path.exists(dir_name):
+        pytest.skip(
+            "Need to preprocess the input data. See notebooks/gridding/000_prepare_intput_data.py"
+        )
+    return dir_name

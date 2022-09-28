@@ -173,7 +173,7 @@ proxy_dirs = ["proxy-CEDS9", "proxy-CEDS16", "proxy-backups"]
 
 # %%
 for proxy_dir in proxy_dirs:
-    output_proxy_dir = os.path.join(output_grid_dir, "proxy", proxy_dir)
+    output_proxy_dir = os.path.join(output_grid_dir, "proxies", proxy_dir)
     if os.path.exists(output_proxy_dir):
         shutil.rmtree(output_proxy_dir)
 

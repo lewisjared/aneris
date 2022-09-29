@@ -34,7 +34,10 @@ def load_proxy(proxy_dir: str, proxy_info: pd.DataFrame) -> xr.DataArray:
     )
     if len(proxy_info) == 0:
         logger.error(f"No selected proxies. Falling back to population_2015")
-        return read_proxy_file(fallback_proxy)
+        proxy = read_proxy_file(fallback_proxy)
+        if proxy is None:
+            raise ValueError(f"Could not load {fallback_proxy}")
+        return proxy
 
     proxy_info = proxy_info.squeeze()
     proxy = read_proxy_file(
@@ -136,18 +139,7 @@ class ProxyDataset:
             Proxy dataset ready for use
         """
         proxy_definitions = pd.read_csv(proxy_definition_file)
-
-        sector_mapping = pd.read_csv(
-            proxy_definition_file.replace("proxy_mapping", "gridding_sector")
-        )
         proxy_definitions["sector_type"] = sector_type
-
-        # Hack: replace the short names with the full sector names
-        # The CEDS9 file uses short names and the CEDS16 file uses long names
-        for mapping in sector_mapping.to_dict("records"):
-            proxy_definitions["sector"] = proxy_definitions["sector"].str.replace(
-                mapping["sector_short"], mapping["sector_name"]
-            )
 
         selected_proxies = proxy_definitions[
             (proxy_definitions.em == species) & (proxy_definitions.sector == sector)

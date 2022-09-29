@@ -105,6 +105,22 @@ def grid_iso(
     return res
 
 
+def get_matching_regions(
+    available_regions: List[str], allowed_regions: List[str]
+) -> List[str]:
+    missing_regions = set(allowed_regions) - set(available_regions)
+    if missing_regions:
+        logger.warning(f"Missing {missing_regions} regions from gridding")
+        available_regions = list(set(available_regions) - missing_regions)
+
+    extra_regions = set(available_regions) - set(allowed_regions)
+    if extra_regions:
+        logger.warning(f"Additional regions {extra_regions} will be ignored")
+        available_regions = list(set(available_regions) - extra_regions)
+
+    return available_regions
+
+
 class Gridder:
     """
     Grids a set of input emissions
@@ -166,18 +182,12 @@ class Gridder:
             regions = self.mask_loader.iso_list()
 
         # Check region availability
-        available_regions = emissions.get_unique_meta("region")
-        missing_regions = set(regions) - set(available_regions)
-        if missing_regions:
-            logger.warning(
-                f"Missing {missing_regions} regions from gridding {species} / {sector_name}"
-            )
-            available_regions = list(set(available_regions) - missing_regions)
+        available_regions = get_matching_regions(
+            emissions.get_unique_meta("region"), regions
+        )
 
-        extra_regions = set(available_regions) - set(regions)
-        if extra_regions:
-            logger.warning(f"Additional regions {extra_regions} will be ignored")
-            available_regions = list(set(available_regions) - extra_regions)
+        if not available_regions:
+            raise ValueError("No regions available for regridding")
 
         proxy_dataset = ProxyDataset.load_from_proxy_file(
             self.proxy_definition_file,
@@ -216,18 +226,6 @@ class Gridder:
             emissions = scmdata.ScmRun(emissions, **kwargs)
         else:
             emissions = scmdata.ScmRun(emissions.timeseries())
-
-        # Remove unknown regions
-        expected_regions = self.mask_loader.iso_list() + ["World"]
-        unknown_regions = emissions.filter(region=expected_regions, keep=False)
-        if len(unknown_regions):
-            logger.warning(
-                f"Dropping unknown regions: {unknown_regions.get_unique_meta('region')}"
-            )
-            emissions = emissions.filter(region=expected_regions)
-
-        if len(emissions) == 0:
-            raise ValueError("No emissions remain to be gridded")
 
         result = xr.Dataset()
 

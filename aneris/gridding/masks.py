@@ -146,7 +146,7 @@ class MaskLoader:
 
         fnames = glob(os.path.join(self.grid_dir, "masks", "*.nc"))
 
-        return [os.path.basename(f).split("_")[1].upper() for f in fnames]
+        return [os.path.basename(f)[:-3].split("_")[1].upper() for f in fnames]
 
     def latitude_grid_size(self) -> xr.DataArray:
         lon_centers, lat_centers = get_grid_centers(0.5)

@@ -1,6 +1,7 @@
 import logging
 import os
 from typing import List, Optional
+from attrs import define
 
 import pandas as pd
 import xarray as xr
@@ -15,6 +16,13 @@ def read_proxy_file(fname: str) -> Optional[xr.DataArray]:
     return xr.load_dataarray(fname)
 
 
+@define
+class ProxyInfo:
+    sector: str
+    sector_type: str
+    proxy_file: str
+
+
 def load_proxy(proxy_dir: str, proxy_info: pd.DataFrame) -> xr.DataArray:
     if len(proxy_info) > 1:
         raise ValueError("Could not select a single proxy")
@@ -22,14 +30,20 @@ def load_proxy(proxy_dir: str, proxy_info: pd.DataFrame) -> xr.DataArray:
     fallback_proxy = os.path.join(
         proxy_dir,
         "proxy-backup",
-        "population_2015.Rd",
+        "population_2015.nc",
     )
     if len(proxy_info) == 0:
         logger.error(f"No selected proxies. Falling back to population_2015")
         return read_proxy_file(fallback_proxy)
 
     proxy_info = proxy_info.squeeze()
-    proxy = read_proxy_file(os.path.join(proxy_dir, proxy_info["proxy_file"] + ".Rd"))
+    proxy = read_proxy_file(
+        os.path.join(
+            proxy_dir,
+            f"proxy-{ proxy_info['sector_type']}",
+            proxy_info["proxy_file"] + ".nc",
+        )
+    )
 
     if proxy is None:
         logger.error(
@@ -40,7 +54,7 @@ def load_proxy(proxy_dir: str, proxy_info: pd.DataFrame) -> xr.DataArray:
             os.path.join(
                 proxy_dir,
                 "proxy-backup",
-                proxy_info["proxybackup_file"] + ".Rd",
+                proxy_info["proxybackup_file"] + ".nc",
             )
         )
     if proxy is None:
@@ -92,6 +106,7 @@ class ProxyDataset:
         proxy_dir: str,
         species: str,
         sector: str,
+        sector_type: str,
         years: List[int],
     ) -> "ProxyDataset":
         """
@@ -125,6 +140,7 @@ class ProxyDataset:
         sector_mapping = pd.read_csv(
             proxy_definition_file.replace("proxy_mapping", "gridding_sector")
         )
+        proxy_definitions["sector_type"] = sector_type
 
         # Hack: replace the short names with the full sector names
         # The CEDS9 file uses short names and the CEDS16 file uses long names

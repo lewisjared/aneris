@@ -8,6 +8,7 @@ import xarray as xr
 
 from aneris.gridding.masks import MaskLoader
 from aneris.gridding.proxy import ProxyDataset
+from aneris.gridding.sectors import SECTOR_TYPE
 from aneris.unit_registry import ur
 
 IAMCDataset = Union["scmdata.ScmRun", "pyam.IamDataFrame"]
@@ -113,18 +114,19 @@ class Gridder:
         self,
         grid_dir: str,
         proxy_definition_file: Union[str, None] = None,
-        sectoral_map="CEDS16",
+        sector_type: SECTOR_TYPE = "CEDS9",
         global_sectors=("Aircraft", "International Shipping"),
     ):
         self.grid_dir = grid_dir
         self.mask_loader = MaskLoader(grid_dir)
         self.global_sectors = global_sectors
+        self.sector_type = sector_type
 
         if proxy_definition_file is None:
             proxy_definition_file = os.path.join(
                 grid_dir,
                 "gridding-mappings",
-                f"proxy_mapping_{sectoral_map}.csv",
+                f"proxy_mapping_{sector_type}.csv",
             )
         self.proxy_definition_file = proxy_definition_file
 
@@ -154,11 +156,11 @@ class Gridder:
         -------
         xr.DataArray
         """
-        species, sector = self._parse_variable_name(variable)
+        species, sector_name = self._parse_variable_name(variable)
 
         target_years = emissions["year"]
 
-        if sector in self.global_sectors:
+        if sector_name in self.global_sectors:
             regions = ["World"]
         else:
             regions = self.mask_loader.iso_list()
@@ -168,15 +170,21 @@ class Gridder:
         missing_regions = set(regions) - set(available_regions)
         if missing_regions:
             logger.warning(
-                f"Missing {missing_regions} regions from gridding {species} / {sector}"
+                f"Missing {missing_regions} regions from gridding {species} / {sector_name}"
             )
             available_regions = list(set(available_regions) - missing_regions)
+
+        extra_regions = set(available_regions) - set(regions)
+        if extra_regions:
+            logger.warning(f"Additional regions {extra_regions} will be ignored")
+            available_regions = list(set(available_regions) - extra_regions)
 
         proxy_dataset = ProxyDataset.load_from_proxy_file(
             self.proxy_definition_file,
             os.path.join(self.grid_dir, "proxies"),
             species=species,
-            sector=sector,
+            sector=sector_name,
+            sector_type=self.sector_type,
             years=target_years,
         )
 
@@ -186,7 +194,7 @@ class Gridder:
         gridded_sector["scenario"] = scenario
         gridded_sector["model"] = model
         gridded_sector["species"] = species
-        gridded_sector["sector"] = sector
+        gridded_sector["sector"] = sector_name
 
         return gridded_sector
 

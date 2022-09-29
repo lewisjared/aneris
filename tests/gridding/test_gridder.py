@@ -42,20 +42,48 @@ def test_gridder_grid(mock_grid_sector, grid_dir, country_emissions):
     pass
 
 
-def test_gridder_grid_sector(grid_dir, country_emissions_clean):
-    gridder = Gridder(grid_dir=grid_dir)
-    emissions = country_emissions_clean.filter(variable="Emissions|CH4|Total")
+def test_gridder_grid_sector(
+    grid_dir, country_emissions_clean, emissions_downscaling_archive
+):
+    gridder = Gridder(
+        grid_dir=grid_dir,
+        proxy_definition_file=os.path.join(
+            emissions_downscaling_archive,
+            "gridding/gridding-mappings/proxy_mapping_CEDS9.csv",
+        ),
+    )
+    emissions = country_emissions_clean.filter(variable="Emissions|CH4|Energy Sector")
 
     res = gridder.grid_sector(
         model="test",
         scenario="ssp126",
-        variable="Emissions|CH4|Total",
+        variable="Emissions|CH4|Energy Sector",
         emissions=emissions,
     )
     assert res["scenario"] == "ssp126"
     assert res["model"] == "test"
     assert res["species"] == "CH4"
-    assert res["sector"] == "Total"
+    assert res["sector"] == "Energy Sector"
+
+    assert ur(str(res["unit"].values)) == ur("kg CH4 / s/ m^2")
+
+
+def test_gridder_grid_sector_world_only(grid_dir, country_emissions_clean):
+    gridder = Gridder(grid_dir=grid_dir)
+    emissions = country_emissions_clean.filter(
+        variable="Emissions|CH4|International shipping"
+    )
+
+    res = gridder.grid_sector(
+        model="test",
+        scenario="ssp126",
+        variable="Emissions|CH4|Energy Sector",
+        emissions=emissions,
+    )
+    assert res["scenario"] == "ssp126"
+    assert res["model"] == "test"
+    assert res["species"] == "CH4"
+    assert res["sector"] == "Energy Sector"
 
     assert ur(str(res["unit"].values)) == ur("kg CH4 / s/ m^2")
 

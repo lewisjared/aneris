@@ -165,10 +165,10 @@ for code in country_codes:
 # There are 3 folders of interest:
 # * proxy-CEDS9
 # * proxy-CEDS16
-# * proxy-backups
+# * proxy-backup
 
 # %%
-proxy_dirs = ["proxy-CEDS9", "proxy-CEDS16", "proxy-backups"]
+proxy_dirs = ["proxy-CEDS9", "proxy-CEDS16", "proxy-backup"]
 
 
 # %%
@@ -184,7 +184,13 @@ for proxy_dir in proxy_dirs:
         proxy = read_proxy_file(fname)
         fname_out, _ = os.path.splitext(os.path.basename(fname))
 
-        variable, sector, year = fname_out.split("_")
+        toks = fname_out.split("_")
+        if len(toks) == 3:
+            variable, sector, year = toks
+        else:
+            variable, year = toks
+            sector = "Total"
+
         proxy.attrs["source"] = fname
         proxy.attrs["sector"] = sector
         proxy.attrs["year"] = year

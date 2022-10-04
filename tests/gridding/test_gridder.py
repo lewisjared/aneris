@@ -9,7 +9,7 @@ import xarray as xr
 
 from aneris.gridding import Gridder
 from aneris.gridding.gridder import convert_to_target_unit
-from aneris.gridding.masks import MaskLoader
+from aneris.gridding.masks import MaskStore
 from aneris.unit_registry import ur
 
 
@@ -27,8 +27,8 @@ def country_emissions_clean(test_data_dir, country_emissions):
 def test_gridder_setup(grid_dir):
     gridder = Gridder(grid_dir=grid_dir)
 
-    assert isinstance(gridder.mask_loader, MaskLoader)
-    assert gridder.mask_loader.grid_dir == grid_dir
+    assert isinstance(gridder.mask_store, MaskStore)
+    assert gridder.mask_store.grid_dir == grid_dir
 
 
 @mock.patch.object(Gridder, "grid_sector")

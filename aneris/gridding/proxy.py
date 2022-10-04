@@ -156,3 +156,39 @@ class ProxyDataset:
             proxies.append(proxy)
 
         return cls(xr.concat(proxies, dim="year"))
+
+
+class SeasonalityStore:
+    def __init__(self, grid_dir: str, mapping: pd.DataFrame):
+        self.grid_dir = grid_dir
+        self.mapping = mapping
+
+    def get(self, species: str, sector: str, year: int, allow_close=False):
+        match = self._find(species, sector, year, allow_close=allow_close)
+
+        return os.path.join(self.grid_dir, "seasonality", match + ".nc")
+
+    def load(self, species: str, sector: str, year: int, allow_close=False):
+        # TODO: cache result
+        return read_proxy_file(self.get(species, sector, year, allow_close=allow_close))
+
+    def _find(self, species, sector, year, allow_close=False):
+        matching = self.mapping[
+            (self.mapping.em == species) & (self.mapping.sector == sector)
+        ]
+        if not matching:
+            raise ValueError(f"Could not find a match for {species}/{sector}")
+
+        exact = matching[matching.year == year]
+        if exact:
+            return matching.seasonality_file.squueze()
+        elif allow_close:
+            return matching.seasonality_file.squueze()
+        else:
+            raise ValueError(f"Could not find a match for {species}/{sector}/{year}")
+
+    @classmethod
+    def load_from_csv(cls, grid_dir, fname):
+        mapping = pd.read_csv(fname)
+
+        return cls(grid_dir, mapping)

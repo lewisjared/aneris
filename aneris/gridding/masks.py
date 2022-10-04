@@ -115,7 +115,7 @@ def read_mask(grid_dir: str, iso_code: str) -> xr.DataArray:
     return xr.load_dataarray(os.path.join(grid_dir, "masks", fname))
 
 
-class MaskLoader:
+class MaskStore:
     """
     Loads and processes country masks
 
@@ -129,9 +129,9 @@ class MaskLoader:
     def get_iso(self, iso_code: str) -> xr.DataArray:
         if iso_code.upper() == "WORLD":
             return read_mask(
-            self.grid_dir,
-            "GLOBAL",
-        )
+                self.grid_dir,
+                "GLOBAL",
+            )
 
         return read_mask(
             self.grid_dir,
@@ -146,8 +146,10 @@ class MaskLoader:
         -------
         list of str
         """
-
         fnames = glob(os.path.join(self.grid_dir, "masks", "*.nc"))
+
+        if len(fnames) == 0:
+            raise ValueError("No masks found. Check grid_dir")
 
         return [os.path.basename(f)[:-3].split("_")[1].upper() for f in fnames]
 

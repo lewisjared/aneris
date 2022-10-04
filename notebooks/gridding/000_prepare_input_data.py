@@ -188,7 +188,7 @@ def read_mask(code):
     mask.to_netcdf(os.path.join(mask_dir, f"mask_{code.upper()}.nc"))
 
 
-# Parallel(n_jobs=16)(delayed(read_mask)(code) for code in country_codes)
+Parallel(n_jobs=16)(delayed(read_mask)(code) for code in country_codes)
 
 # %% [markdown]
 # # Proxies

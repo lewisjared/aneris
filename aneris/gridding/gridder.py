@@ -6,8 +6,8 @@ import pint
 import scmdata
 import xarray as xr
 
-from aneris.gridding.masks import MaskLoader
-from aneris.gridding.proxy import ProxyDataset
+from aneris.gridding.masks import MaskStore
+from aneris.gridding.proxy import ProxyDataset, SeasonalityStore
 from aneris.gridding.sectors import SECTOR_TYPE
 from aneris.unit_registry import ur
 
@@ -56,8 +56,10 @@ def convert_to_target_unit(
     return start_mass_in_kg_correct_units
 
 
-def add_seasonality(data: xr.DataArray) -> xr.DataArray:
-    # TODO: implement seasonality
+def add_seasonality(
+    seasonality_store: SeasonalityStore, data: xr.DataArray, species, sector
+) -> xr.DataArray:
+    seas_data = seasonality_store.load(species, sector, 2015)
 
     return data
 
@@ -65,22 +67,25 @@ def add_seasonality(data: xr.DataArray) -> xr.DataArray:
 def grid_sector(
     species: str,
     iso_list: List[str],
-    masker: MaskLoader,
+    mask_store: MaskStore,
+    seasonality_store: SeasonalityStore,
     emissions: scmdata.ScmRun,
     proxy: ProxyDataset,
 ):
-    global_grid_area = masker.latitude_grid_size()
+    global_grid_area = mask_store.latitude_grid_size()
     emissions_units: pint.Unit = ur(emissions.get_unique_meta("unit", True))
 
     iso_sectoral_emissions = [
-        grid_iso(iso, masker.get_iso(iso), emissions.filter(region=iso), proxy)
+        grid_iso(iso, mask_store.get_iso(iso), emissions.filter(region=iso), proxy)
         for iso in iso_list
     ]
 
     # Aggregate and scale to area
     global_emissions = xr.concat(iso_sectoral_emissions, dim="region").sum(dim="region")
     # Reformat data to globe
-    global_emissions, _ = xr.align(global_emissions, masker.get_iso("World"), join="outer", fill_value=0)
+    global_emissions, _ = xr.align(
+        global_emissions, mask_store.get_iso("World"), join="outer", fill_value=0
+    )
 
     # Calculate factor to go from Mt X year-1 km-2 to kg m-2 s-1
     flux_factor = convert_to_target_unit(
@@ -89,24 +94,28 @@ def grid_sector(
     global_emissions = global_emissions / global_grid_area * flux_factor.m
     global_emissions.attrs["units"] = "kg m^-2 s^-1"
 
-    global_emissions.lat.attrs.update({
-        "units": "degrees_north",
-        "long_name": "latitude",
-        "axis": "Y",
-        "standard_name": "latitude",
-        "topology": "linear",
-    })
+    global_emissions.lat.attrs.update(
+        {
+            "units": "degrees_north",
+            "long_name": "latitude",
+            "axis": "Y",
+            "standard_name": "latitude",
+            "topology": "linear",
+        }
+    )
 
-    global_emissions.lon.attrs.update({
-        "units": "degrees_east",
-        "long_name": "longitude",
-        "axis": "X",
-        "modulo": "360",
-        "standard_name": "longitude",
-        "topology": "circular",
-    })
+    global_emissions.lon.attrs.update(
+        {
+            "units": "degrees_east",
+            "long_name": "longitude",
+            "axis": "X",
+            "modulo": "360",
+            "standard_name": "longitude",
+            "topology": "circular",
+        }
+    )
 
-    return add_seasonality(global_emissions)
+    return add_seasonality(seasonality_store, global_emissions, species, sector)
 
 
 def grid_iso(
@@ -149,11 +158,15 @@ class Gridder:
         self,
         grid_dir: str,
         proxy_definition_file: Union[str, None] = None,
+        seasonality_mapping_file: Union[str, None] = None,
         sector_type: SECTOR_TYPE = "CEDS9",
         global_sectors=("Aircraft", "International Shipping"),
     ):
         self.grid_dir = grid_dir
-        self.mask_loader = MaskLoader(grid_dir)
+        self.mask_store = MaskStore(grid_dir)
+        self.seasonality_store = SeasonalityStore.load_from_csv(
+            self.grid_dir, seasonality_mapping_file
+        )
         self.global_sectors = global_sectors
         self.sector_type = sector_type
 
@@ -198,7 +211,7 @@ class Gridder:
         if sector_name in self.global_sectors:
             regions = ["World"]
         else:
-            regions = self.mask_loader.iso_list()
+            regions = self.mask_store.iso_list()
 
         # Check region availability
         available_regions = get_matching_regions(
@@ -218,7 +231,12 @@ class Gridder:
         )
 
         gridded_sector = grid_sector(
-            species, available_regions, self.mask_loader, emissions, proxy_dataset
+            species,
+            available_regions,
+            self.mask_store,
+            self.seasonality_store,
+            emissions,
+            proxy_dataset,
         )
         gridded_sector["scenario"] = scenario
         gridded_sector["model"] = model

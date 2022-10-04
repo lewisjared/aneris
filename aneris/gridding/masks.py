@@ -128,7 +128,10 @@ class MaskLoader:
 
     def get_iso(self, iso_code: str) -> xr.DataArray:
         if iso_code.upper() == "WORLD":
-            return 1
+            return read_mask(
+            self.grid_dir,
+            "GLOBAL",
+        )
 
         return read_mask(
             self.grid_dir,

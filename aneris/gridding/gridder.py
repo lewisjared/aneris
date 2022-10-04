@@ -79,13 +79,32 @@ def grid_sector(
 
     # Aggregate and scale to area
     global_emissions = xr.concat(iso_sectoral_emissions, dim="region").sum(dim="region")
+    # Reformat data to globe
+    global_emissions, _ = xr.align(global_emissions, masker.get_iso("World"), join="outer", fill_value=0)
 
     # Calculate factor to go from Mt X year-1 km-2 to kg m-2 s-1
     flux_factor = convert_to_target_unit(
         (emissions_units / ur("km^2")), f"kg m^-2 s^-1"
     )
     global_emissions = global_emissions / global_grid_area * flux_factor.m
-    global_emissions["unit"] = str(flux_factor.u)
+    global_emissions.attrs["units"] = "kg m^-2 s^-1"
+
+    global_emissions.lat.attrs.update({
+        "units": "degrees_north",
+        "long_name": "latitude",
+        "axis": "Y",
+        "standard_name": "latitude",
+        "topology": "linear",
+    })
+
+    global_emissions.lon.attrs.update({
+        "units": "degrees_east",
+        "long_name": "longitude",
+        "axis": "X",
+        "modulo": "360",
+        "standard_name": "longitude",
+        "topology": "circular",
+    })
 
     return add_seasonality(global_emissions)
 

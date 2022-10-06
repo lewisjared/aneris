@@ -5,6 +5,8 @@ from typing import List, Union
 import pint
 import scmdata
 import xarray as xr
+from cftime import DatetimeNoLeap
+import numpy as np
 
 from aneris.gridding.masks import MaskStore
 from aneris.gridding.proxy import ProxyDataset, SeasonalityStore
@@ -14,6 +16,9 @@ from aneris.unit_registry import ur
 IAMCDataset = Union["scmdata.ScmRun", "pyam.IamDataFrame"]
 
 logger = logging.getLogger(__name__)
+
+# Days per month in a 365-day calendar
+DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
 
 def convert_to_target_unit(
@@ -56,16 +61,61 @@ def convert_to_target_unit(
     return start_mass_in_kg_correct_units
 
 
+def convert_to_monthly(years, date_type=DatetimeNoLeap):
+    vals = []
+
+    for y in years:
+        vals.extend([date_type(y, month, 15) for month in range(1, 13)])
+
+    return xr.IndexVariable(
+        "time", vals, attrs={"long_name": "time", "standard_name": "time", "axis": "T"}
+    )
+
+
 def add_seasonality(
     seasonality_store: SeasonalityStore, data: xr.DataArray, species, sector
 ) -> xr.DataArray:
+
+    if not seasonality_store:
+        logger.info("Skipping adding seasonality")
+        return data
+
     seas_data = seasonality_store.load(species, sector, 2015)
+
+    if seas_data is None:
+        raise ValueError("Could not find a seasonality map")
+
+    # Loop over years and apply the seasonality mapping
+    num_years = data.shape[0]
+    new_shape = (num_years * 12, *data.shape[1:])
+
+    monthly_data = xr.DataArray(
+        np.zeros(new_shape),
+        dims=("time", *data.dims[1:]),
+        coords={
+            "time": convert_to_monthly(data.year),
+            **{dim_name: data.coords[dim_name] for dim_name in data.dims[1:]},
+        },
+        attrs=data.attrs,
+    )
+
+    for i, year in enumerate(data.year.values):
+        # Adjust seasonality for 365-day calendar
+        # I don't understand why this is needed
+        seas_adj = 365 / (seas_data * DAYS_IN_MONTH * 12).sum("month")
+
+        # Data is in kg/m^2/s
+        data_seasonal = data[i] * seas_data * seas_adj * 12
+        monthly_data[i * 12 : (i + 1) * 12] = data_seasonal.transpose(
+            "month", *data.dims[1:]
+        )
 
     return data
 
 
 def grid_sector(
     species: str,
+    sector: str,
     iso_list: List[str],
     mask_store: MaskStore,
     seasonality_store: SeasonalityStore,
@@ -164,9 +214,7 @@ class Gridder:
     ):
         self.grid_dir = grid_dir
         self.mask_store = MaskStore(grid_dir)
-        self.seasonality_store = SeasonalityStore.load_from_csv(
-            self.grid_dir, seasonality_mapping_file
-        )
+
         self.global_sectors = global_sectors
         self.sector_type = sector_type
 
@@ -177,6 +225,13 @@ class Gridder:
                 f"proxy_mapping_{sector_type}.csv",
             )
         self.proxy_definition_file = proxy_definition_file
+
+        if seasonality_mapping_file:
+            self.seasonality_store = SeasonalityStore.load_from_csv(
+                self.grid_dir, seasonality_mapping_file
+            )
+        else:
+            self.seasonality_store = None
 
     def grid_sector(
         self,
@@ -232,6 +287,7 @@ class Gridder:
 
         gridded_sector = grid_sector(
             species,
+            sector_name,
             available_regions,
             self.mask_store,
             self.seasonality_store,

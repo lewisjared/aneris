@@ -176,14 +176,15 @@ class SeasonalityStore:
         matching = self.mapping[
             (self.mapping.em == species) & (self.mapping.sector == sector)
         ]
-        if not matching:
+        if not len(matching):
             raise ValueError(f"Could not find a match for {species}/{sector}")
 
         exact = matching[matching.year == year]
-        if exact:
-            return matching.seasonality_file.squueze()
+        if len(exact) == 1:
+            return matching.seasonality_file.squeeze()
         elif allow_close:
-            return matching.seasonality_file.squueze()
+            #
+            return matching.seasonality_file.iloc[0]
         else:
             raise ValueError(f"Could not find a match for {species}/{sector}/{year}")
 

@@ -252,6 +252,7 @@ if os.path.exists(output_seasonality_dir):
     shutil.rmtree(output_seasonality_dir)
 
 os.makedirs(output_seasonality_dir)
+
 fnames = glob(os.path.join(RAW_GRIDDING_DIR, "seasonality-CEDS9", "*.Rd"))
 
 
@@ -270,7 +271,7 @@ def read_seasonality(fname):
         variable = toks[1]
     else:
         variable = "ALL"
-    proxy.attrs["sector"] = variable
+    proxy.attrs["variable"] = variable
     fname_out = f"{toks[0]}_{variable}_seasonality.nc"
 
     proxy.to_dataset(name=variable).to_netcdf(
@@ -279,5 +280,39 @@ def read_seasonality(fname):
     )
 
 
-read_seasonality(fnames[0])
+def read_seasonality_chunked(fnames):
+    fnames = sorted(fnames)
+    if not fnames:
+        raise ValueError("No results found")
+
+    results = []
+    for fname in fnames:
+        try:
+            proxy = read_proxy_file(fname)
+        except pyreadr.LibrdataError:
+            print(f"failed to read {fname}")
+            return
+        results.append(proxy)
+
+    proxy = xr.concat(results, "level").transpose("lat", "lon", "level", "month")
+
+    toks = os.path.basename(fnames[0]).split("_")
+    proxy.attrs["sector"] = toks[0]
+
+    variable = toks[1]
+    proxy.attrs["variable"] = variable
+    fname_out = f"{toks[0]}_{variable}_seasonality.nc"
+
+    proxy.to_dataset(name=variable).to_netcdf(
+        os.path.join(output_seasonality_dir, fname_out),
+        encoding={variable: {"zlib": True, "complevel": 5}},
+    )
+
+
 Parallel(n_jobs=16)(delayed(read_seasonality)(fname) for fname in fnames)
+read_seasonality_chunked(
+    glob(os.path.join(output_grid_dir, "seasonality-temp", "AIR_BC_*.Rd"))
+)
+read_seasonality_chunked(
+    glob(os.path.join(output_grid_dir, "seasonality-temp", "AIR_NOx_*.Rd"))
+)

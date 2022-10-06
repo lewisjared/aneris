@@ -161,6 +161,7 @@ def read_proxy_file(proxy_fname: str) -> Union[xr.DataArray, None]:
 
     return xr.DataArray(data, coords=coords, dims=dims)
 
+
 # %%
 output_grid_dir = os.path.join(DATA_DIR, "processed", "gridding")
 
@@ -221,7 +222,8 @@ def write_proxy_file(output_proxy_dir, fname):
     proxy.attrs["year"] = year
 
     proxy.to_dataset(name=variable).to_netcdf(
-        os.path.join(output_proxy_dir, f"{fname_out}.nc")
+        os.path.join(output_proxy_dir, f"{fname_out}.nc"),
+        encoding={variable: {"zlib": True, "complevel": 5}},
     )
 
 
@@ -235,7 +237,9 @@ for proxy_dir in proxy_dirs:
 
     fnames = glob(os.path.join(RAW_GRIDDING_DIR, proxy_dir, "*.Rd"))
 
-    Parallel(n_jobs=8)(delayed(write_proxy_file)(output_proxy_dir, fname) for fname in fnames)
+    Parallel(n_jobs=8)(
+        delayed(write_proxy_file)(output_proxy_dir, fname) for fname in fnames
+    )
 
 # %%
 
@@ -249,6 +253,7 @@ if os.path.exists(output_seasonality_dir):
 
 os.makedirs(output_seasonality_dir)
 fnames = glob(os.path.join(RAW_GRIDDING_DIR, "seasonality-CEDS9", "*.Rd"))
+
 
 def read_seasonality(fname):
     try:
@@ -269,8 +274,10 @@ def read_seasonality(fname):
     fname_out = f"{toks[0]}_{variable}_seasonality.nc"
 
     proxy.to_dataset(name=variable).to_netcdf(
-        os.path.join(output_seasonality_dir, fname_out)
+        os.path.join(output_seasonality_dir, fname_out),
+        encoding={variable: {"zlib": True, "complevel": 5}},
     )
+
 
 read_seasonality(fnames[0])
 Parallel(n_jobs=16)(delayed(read_seasonality)(fname) for fname in fnames)

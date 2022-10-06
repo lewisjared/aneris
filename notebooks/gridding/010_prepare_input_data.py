@@ -28,6 +28,10 @@
 # !pip install pyreadr
 
 # %%
+# split the 4D air seasonality files into n chunks (one per layer)
+# !Rscript 000_decompose_air_seasonality.R
+
+# %%
 import os
 from typing import Union
 from glob import glob

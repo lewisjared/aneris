@@ -154,7 +154,10 @@ class MaskStore:
         return [os.path.basename(f)[:-3].split("_")[1].upper() for f in fnames]
 
     def latitude_grid_size(self) -> xr.DataArray:
-        lon_centers, lat_centers = get_grid_centers(0.5)
+        (
+            lat_centers,
+            lon_centers,
+        ) = get_grid_centers(0.5)
 
         return xr.DataArray(
             grid_cell_areas(lon_centers[:2], lat_centers)[:, 0],

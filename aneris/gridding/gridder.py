@@ -110,7 +110,7 @@ def add_seasonality(
             "month", *data.dims[1:]
         )
 
-    return data
+    return monthly_data
 
 
 def grid_sector(
@@ -134,7 +134,7 @@ def grid_sector(
     global_emissions = xr.concat(iso_sectoral_emissions, dim="region").sum(dim="region")
     # Reformat data to globe
     global_emissions, _ = xr.align(
-        global_emissions, mask_store.get_iso("World"), join="outer", fill_value=0
+        global_emissions, mask_store.get_iso("World"), join="right", fill_value=0
     )
 
     # Calculate factor to go from Mt X year-1 km-2 to kg m-2 s-1
@@ -197,6 +197,46 @@ def get_matching_regions(
         available_regions = list(set(available_regions) - extra_regions)
 
     return available_regions
+
+
+class GriddedResults:
+    def __init__(self, output_dir: str):
+        self.output_dir = output_dir
+        self._results = []
+
+    def __repr__(self):
+        return f"<GriddedResults {self._results}>"
+
+    def _data_filename(
+        self,
+        model: str,
+        scenario: str,
+        variable: str,
+    ):
+        return os.path.join(
+            self.output_dir, f'{variable.replace("|", "_")}_{model}_{scenario}.nc'
+        )
+
+    def load(
+        self,
+        model: str,
+        scenario: str,
+        variable: str,
+    ) -> xr.DataArray:
+        return xr.load_dataarray(self._data_filename(variable, model, scenario))
+
+    def save(
+        self,
+        data: xr.DataArray,
+        model: str,
+        scenario: str,
+        variable: str,
+    ):
+        output_filename = self._data_filename(model, scenario, variable)
+        data.name = variable
+        data.to_dataset().to_netcdf(
+            output_filename, encoding={variable: {"zlib": True, "complevel": 5}}
+        )
 
 
 class Gridder:
@@ -301,12 +341,17 @@ class Gridder:
 
         return gridded_sector
 
-    def grid(self, emissions: Union[IAMCDataset, "str"], **kwargs) -> xr.Dataset:
+    def grid(
+        self, output_dir: str, emissions: Union[IAMCDataset, "str"], **kwargs
+    ) -> GriddedResults:
         """
         Attempt to grid a set of emissions
 
         Parameters
         ----------
+        output_dir : str
+            Directory to store the gridded outputs
+
         emissions : scmdata.ScmRun or pyam.IamDataFrame or str
 
             If a string is provided, the emissions input will be loaded from disk.
@@ -320,31 +365,33 @@ class Gridder:
         else:
             emissions = scmdata.ScmRun(emissions.timeseries())
 
-        result = xr.Dataset()
+        results = GriddedResults(output_dir)
+
+        for emissions_scenario in emissions.groupby(["scenario", "model"]):
+            self.grid_scenario(emissions_scenario, results)
+
+        return results
+
+    def grid_scenario(self, emissions: scmdata.ScmRun, results=None, output_dir=None):
+        if results is None:
+            results = GriddedResults(output_dir or ".")
+
+        scenario = emissions.get_unique_meta("scenario", True)
+        model = emissions.get_unique_meta("model", True)
 
         for emissions_variable in emissions.groupby(["variable"]):
-            grids = []
             variable = emissions_variable.get_unique_meta("variable", True)
 
-            for emissions_sector in emissions_variable.groupby(["scenario", "model"]):
-                scenario = emissions_sector.get_unique_meta("scenario", True)
-                model = emissions_sector.get_unique_meta("model", True)
-
-                logger.info(f"Gridding {model} / {scenario} / {variable}")
-                res = self.grid_sector(
-                    model=model,
-                    scenario=scenario,
-                    variable=variable,
-                    emissions=emissions_sector,
-                )
-
-                grids.append(res)
-
-            result[variable] = xr.concat(
-                grids, dim="run_id", coords=["scenario", "model"]
+            logger.info(f"Gridding {model} / {scenario} / {variable}")
+            res = self.grid_sector(
+                model=model,
+                scenario=scenario,
+                variable=variable,
+                emissions=emissions_variable,
             )
 
-        return result
+            results.save(res, model, scenario, variable)
+        return results
 
     def _parse_variable_name(self, variable: str) -> (str, str):
         toks = variable.split("|")

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Days per month in a 365-day calendar
 DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+MID_DAY_OF_MONTH = [16, 15, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16]
 
 
 def convert_to_target_unit(
@@ -65,10 +66,19 @@ def convert_to_monthly(years, date_type=DatetimeNoLeap):
     vals = []
 
     for y in years:
-        vals.extend([date_type(y, month, 15) for month in range(1, 13)])
+        vals.extend(
+            [date_type(y, month, MID_DAY_OF_MONTH[month - 1]) for month in range(1, 13)]
+        )
 
     return xr.IndexVariable(
-        "time", vals, attrs={"long_name": "time", "standard_name": "time", "axis": "T"}
+        "time",
+        vals,
+        attrs={
+            "long_name": "time",
+            "standard_name": "time",
+            "axis": "T",
+        },
+        encoding={"units": f"days since {years[0]}-01-01 00:00:00"},
     )
 
 
@@ -80,26 +90,28 @@ def add_seasonality(
         logger.info("Skipping adding seasonality")
         return data
 
-    seas_data = seasonality_store.load(species, sector, 2015)
-
-    if seas_data is None:
-        raise ValueError("Could not find a seasonality map")
-
     # Loop over years and apply the seasonality mapping
     num_years = data.shape[0]
     new_shape = (num_years * 12, *data.shape[1:])
+
+    time = convert_to_monthly(data.year)
 
     monthly_data = xr.DataArray(
         np.zeros(new_shape),
         dims=("time", *data.dims[1:]),
         coords={
-            "time": convert_to_monthly(data.year),
+            "time": time,
             **{dim_name: data.coords[dim_name] for dim_name in data.dims[1:]},
         },
         attrs=data.attrs,
     )
 
     for i, year in enumerate(data.year.values):
+        seas_data = seasonality_store.load(species, sector, 2015)
+
+        if seas_data is None:
+            raise ValueError("Could not find a seasonality map")
+
         # Adjust seasonality for 365-day calendar
         # I don't understand why this is needed
         seas_adj = 365 / (seas_data * DAYS_IN_MONTH * 12).sum("month")
@@ -121,7 +133,7 @@ def grid_sector(
     seasonality_store: SeasonalityStore,
     emissions: scmdata.ScmRun,
     proxy: ProxyDataset,
-):
+) -> xr.DataArray:
     global_grid_area = mask_store.latitude_grid_size()
     emissions_units: pint.Unit = ur(emissions.get_unique_meta("unit", True))
 
@@ -178,7 +190,7 @@ def grid_iso(
     )
 
     res = emissions_da * weighted_proxy
-    res["region"] = iso
+    res.attrs["region"] = iso
 
     return res
 
@@ -334,10 +346,10 @@ class Gridder:
             emissions,
             proxy_dataset,
         )
-        gridded_sector["scenario"] = scenario
-        gridded_sector["model"] = model
-        gridded_sector["species"] = species
-        gridded_sector["sector"] = sector_name
+        gridded_sector.attrs["scenario"] = scenario
+        gridded_sector.attrs["model"] = model
+        gridded_sector.attrs["species"] = species
+        gridded_sector.attrs["sector"] = sector_name
 
         return gridded_sector
 

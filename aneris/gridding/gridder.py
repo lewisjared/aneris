@@ -1,6 +1,7 @@
+import glob
 import logging
 import os
-from typing import List, Union
+from typing import List, Union, Optional
 
 import pint
 import scmdata
@@ -9,7 +10,7 @@ from cftime import DatetimeNoLeap
 import numpy as np
 
 from aneris.gridding.masks import MaskStore
-from aneris.gridding.proxy import ProxyDataset, SeasonalityStore
+from aneris.gridding.proxy import ProxyDataset, ProxyStore, SeasonalityStore
 from aneris.gridding.sectors import SECTOR_TYPE
 from aneris.unit_registry import ur
 
@@ -211,6 +212,29 @@ def get_matching_regions(
     return available_regions
 
 
+def chunk_timeseries(
+    timeseries: scmdata.ScmRun, chunk_years: Optional[int]
+) -> List[scmdata.ScmRun]:
+    """
+    Chunk a timeseries
+
+    Splits an incoming timeseries into a set of chunks `chunk_years` long. The last
+    chunk may be shorter than `chunk_years`.
+    """
+    if chunk_years is None:
+        return [timeseries]
+    assert chunk_years > 0
+
+    chunks = []
+    year = timeseries["year"].min()
+    while year <= timeseries["year"].max():
+        years = range(year, year + chunk_years)
+        chunks.append(timeseries.filter(year=years))
+        year = year + chunk_years
+
+    return chunks
+
+
 class GriddedResults:
     def __init__(self, output_dir: str):
         self.output_dir = output_dir
@@ -224,9 +248,12 @@ class GriddedResults:
         model: str,
         scenario: str,
         variable: str,
+        start_date: str = "*",
+        end_date: str = "*",
     ):
         return os.path.join(
-            self.output_dir, f'{variable.replace("|", "_")}_{model}_{scenario}.nc'
+            self.output_dir,
+            f'{variable.replace("|", "_")}_{model}_{scenario}_{start_date}-{end_date}.nc',
         )
 
     def load(
@@ -235,7 +262,11 @@ class GriddedResults:
         scenario: str,
         variable: str,
     ) -> xr.DataArray:
-        return xr.load_dataarray(self._data_filename(variable, model, scenario))
+        matching_fnames = sorted(
+            glob.glob(self._data_filename(variable, model, scenario))
+        )
+
+        return xr.concat([xr.load_dataarray(f) for f in matching_fnames], dim="time")
 
     def save(
         self,
@@ -244,10 +275,16 @@ class GriddedResults:
         scenario: str,
         variable: str,
     ):
-        output_filename = self._data_filename(model, scenario, variable)
+        start_date = data.time.values.min().strftime("%Y%m")
+        end_date = data.time.values.max().strftime("%Y%m")
+        output_filename = self._data_filename(
+            model, scenario, variable, start_date=start_date, end_date=end_date
+        )
         data.name = variable
         data.to_dataset().to_netcdf(
-            output_filename, encoding={variable: {"zlib": True, "complevel": 5}}
+            output_filename,
+            unlimited_dims=("time",),
+            encoding={variable: {"zlib": True, "complevel": 5}},
         )
 
 
@@ -263,6 +300,7 @@ class Gridder:
         seasonality_mapping_file: Union[str, None] = None,
         sector_type: SECTOR_TYPE = "CEDS9",
         global_sectors=("Aircraft", "International Shipping"),
+        allow_close_proxies=True,
     ):
         self.grid_dir = grid_dir
         self.mask_store = MaskStore(grid_dir)
@@ -276,14 +314,22 @@ class Gridder:
                 "gridding-mappings",
                 f"proxy_mapping_{sector_type}.csv",
             )
-        self.proxy_definition_file = proxy_definition_file
 
         if seasonality_mapping_file:
             self.seasonality_store = SeasonalityStore.load_from_csv(
-                self.grid_dir, seasonality_mapping_file
+                self.grid_dir,
+                seasonality_mapping_file,
+                allow_close=allow_close_proxies,
             )
         else:
             self.seasonality_store = None
+
+        self.proxy_store = ProxyStore.load_from_csv(
+            self.grid_dir,
+            proxy_definition_file,
+            sector_type=sector_type,
+            allow_close=allow_close_proxies,
+        )
 
     def grid_sector(
         self,
@@ -328,12 +374,9 @@ class Gridder:
         if not available_regions:
             raise ValueError("No regions available for regridding")
 
-        proxy_dataset = ProxyDataset.load_from_proxy_file(
-            self.proxy_definition_file,
-            os.path.join(self.grid_dir, "proxies"),
+        proxy_dataset = self.proxy_store.load(
             species=species,
             sector=sector_name,
-            sector_type=self.sector_type,
             years=target_years,
         )
 
@@ -354,7 +397,11 @@ class Gridder:
         return gridded_sector
 
     def grid(
-        self, output_dir: str, emissions: Union[IAMCDataset, "str"], **kwargs
+        self,
+        output_dir: str,
+        emissions: Union[IAMCDataset, "str"],
+        chunk_years: Optional[int] = None,
+        **kwargs,
     ) -> GriddedResults:
         """
         Attempt to grid a set of emissions
@@ -368,6 +415,12 @@ class Gridder:
 
             If a string is provided, the emissions input will be loaded from disk.
 
+        chunk_years : int
+            Size of output chunks in years
+
+            A single chunk will be created if no value is provided which can require large amounts
+            of memory for longer scenarios.
+
         Returns
         -------
         xr.Dataset
@@ -380,11 +433,14 @@ class Gridder:
         results = GriddedResults(output_dir)
 
         for emissions_scenario in emissions.groupby(["scenario", "model"]):
-            self.grid_scenario(emissions_scenario, results)
+            for emissions_chunk in chunk_timeseries(emissions_scenario, chunk_years):
+                self.grid_scenario(emissions_chunk, results)
 
         return results
 
-    def grid_scenario(self, emissions: scmdata.ScmRun, results=None, output_dir=None):
+    def grid_scenario(
+        self, emissions: scmdata.ScmRun, results=None, output_dir=None, suffix=None
+    ):
         if results is None:
             results = GriddedResults(output_dir or ".")
 

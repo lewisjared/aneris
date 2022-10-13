@@ -53,7 +53,7 @@ class Store:
 
         exact = matching[matching.year == year]
         if len(exact) == 1:
-            return matching[self.file_column].squeeze()
+            return matching[self.file_column].iloc[0]
         elif self.allow_close:
             closest_idx = (year - matching.year).abs().argmin()
             logger.info(

@@ -287,6 +287,8 @@ class GriddedResults:
             encoding={variable: {"zlib": True, "complevel": 5}},
         )
 
+        self._results.append(output_filename)
+
 
 class Gridder:
     """

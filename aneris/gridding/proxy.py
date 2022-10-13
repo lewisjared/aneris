@@ -20,13 +20,19 @@ def read_proxy_file(fname: str) -> Optional[xr.DataArray]:
 
 @define
 class ProxyInfo:
+    em: str
     sector: str
+    year: int
     sector_type: str
     proxy_file: str
 
 
 @define
 class Store:
+    """
+    Finds an appropriate proxy for a given species, sector and year
+    """
+
     grid_dir: str
     mapping: pd.DataFrame
     allow_close: bool = False
@@ -38,7 +44,7 @@ class Store:
 
         return cls(grid_dir, mapping, **kwargs)
 
-    def _find(self, species, sector, year):
+    def _find(self, species, sector, year) -> str:
         matching = self.mapping[
             (self.mapping.em == species) & (self.mapping.sector == sector)
         ]
@@ -95,7 +101,7 @@ class ProxyStore(Store):
     sector_type: SECTOR_TYPE = "CEDS9"
     file_column: str = "proxy_file"
 
-    def get(self, species: str, sector: str, year: int) -> xr.DataArray():
+    def get(self, species: str, sector: str, year: int) -> str:
         try:
             match = self._find(species, sector, year)
         except ValueError:
@@ -106,7 +112,7 @@ class ProxyStore(Store):
                 self.grid_dir,
                 "proxies",
                 f"proxy-{self.sector_type}",
-                match["proxy_file"] + ".nc",
+                match + ".nc",
             )
 
             if os.path.exists(out_fname):
@@ -147,7 +153,20 @@ class ProxyStore(Store):
 
 
 class SeasonalityStore(Store):
-    def get(self, species: str, sector: str, year: int):
+    def get(self, species: str, sector: str, year: int) -> str:
+        """
+        Get the filename of the proxy to load
+
+        Parameters
+        ----------
+        species
+        sector
+        year
+
+        Returns
+        -------
+        A filename for a selected proxy file
+        """
         match = self._find(species, sector, year)
 
         return os.path.join(self.grid_dir, "seasonality", match + ".nc")

@@ -1,10 +1,12 @@
 import logging
 import os
-from typing import List, Optional
+from typing import List, Optional, Any
 from attrs import define
 
 import pandas as pd
 import xarray as xr
+
+from aneris.gridding.sectors import SECTOR_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -23,61 +25,46 @@ class ProxyInfo:
     proxy_file: str
 
 
-def load_proxy(proxy_dir: str, proxy_info: pd.DataFrame) -> xr.DataArray:
-    if len(proxy_info) > 1:
-        raise ValueError("Could not select a single proxy")
+@define
+class Store:
+    grid_dir: str
+    mapping: pd.DataFrame
+    allow_close: bool = False
+    file_column: str = "seasonality_file"
 
-    fallback_proxy = os.path.join(
-        proxy_dir,
-        "proxy-backup",
-        "population_2015.nc",
-    )
-    if len(proxy_info) == 0:
-        logger.error(f"No selected proxies. Falling back to population_2015")
-        proxy = read_proxy_file(fallback_proxy)
-        if proxy is None:
-            raise ValueError(f"Could not load {fallback_proxy}")
-        return proxy
+    @classmethod
+    def load_from_csv(cls, grid_dir: str, fname: str, **kwargs: Any):
+        mapping = pd.read_csv(fname)
 
-    proxy_info = proxy_info.squeeze()
-    proxy = read_proxy_file(
-        os.path.join(
-            proxy_dir,
-            f"proxy-{ proxy_info['sector_type']}",
-            proxy_info["proxy_file"] + ".nc",
-        )
-    )
+        return cls(grid_dir, mapping, **kwargs)
 
-    if proxy is None:
-        logger.error(
-            f"Could not load proxy {proxy_info['proxy_file']}. Falling back to backup"
-        )
+    def _find(self, species, sector, year):
+        matching = self.mapping[
+            (self.mapping.em == species) & (self.mapping.sector == sector)
+        ]
+        if not len(matching):
+            raise ValueError(f"Could not find a match for {species}/{sector}")
 
-        proxy = read_proxy_file(
-            os.path.join(
-                proxy_dir,
-                "proxy-backup",
-                proxy_info["proxybackup_file"] + ".nc",
+        exact = matching[matching.year == year]
+        if len(exact) == 1:
+            return matching[self.file_column].squeeze()
+        elif self.allow_close:
+            closest_idx = (year - matching.year).abs().argmin()
+            logger.info(
+                f"Using close match for {species}/{sector}/{year} (year={matching.year.iloc[closest_idx]})"
             )
-        )
-    if proxy is None:
-        logger.error(
-            f"Could not load proxy {proxy_info['proxybackup_file']}. Falling back to population_2015"
-        )
-
-        proxy = read_proxy_file(fallback_proxy)
-    if proxy is None:
-        raise ValueError("Could not find any appropriate proxies")
-    return proxy
+            return matching[self.file_column].iloc[closest_idx]
+        else:
+            raise ValueError(f"Could not find a match for {species}/{sector}/{year}")
 
 
+@define
 class ProxyDataset:
     """
     A proxy dataset which is used to scale country data into gridded data
     """
 
-    def __init__(self, data: xr.DataArray):
-        self.data = data
+    data: xr.DataArray
 
     def get_weighted(self, mask: xr.DataArray) -> xr.DataArray:
         """
@@ -102,94 +89,69 @@ class ProxyDataset:
 
         return norm_weighted_proxy
 
-    @classmethod
-    def load_from_proxy_file(
-        cls,
-        proxy_definition_file: str,
-        proxy_dir: str,
-        species: str,
-        sector: str,
-        sector_type: str,
-        years: List[int],
-    ) -> "ProxyDataset":
-        """
-        Load a proxy dataset from disk
 
-        This factory method uses a proxy definition file to define the proxy that will be
-        used and a backup for if that isn't available.
+@define
+class ProxyStore(Store):
+    sector_type: SECTOR_TYPE = "CEDS9"
+    file_column: str = "proxy_file"
 
-        Parameters
-        ----------
-        proxy_definition_file : str
-            Path to a CSV file containing the definitions of the proxies being used
-        proxy_dir : str
-            Directory containing the proxy data files
-        species : str
-            Species name
-        sector : str
-            Sector name
-        years : list of int
-            List of years of interest.
+    def get(self, species: str, sector: str, year: int) -> xr.DataArray():
+        try:
+            match = self._find(species, sector, year)
+        except ValueError:
+            match = None
 
-            A ValueError will be raised if proxy data are not available for any of the
-            requested years.
-        Returns
-        -------
-        ProxyDataset
-            Proxy dataset ready for use
-        """
-        proxy_definitions = pd.read_csv(proxy_definition_file)
-        proxy_definitions["sector_type"] = sector_type
+        if match is not None:
+            out_fname = os.path.join(
+                self.grid_dir,
+                "proxies",
+                f"proxy-{self.sector_type}",
+                match["proxy_file"] + ".nc",
+            )
 
-        selected_proxies = proxy_definitions[
-            (proxy_definitions.em == species) & (proxy_definitions.sector == sector)
-        ]
-        if not len(selected_proxies):
-            logger.warning(f"Could not find proxy definition for {species}/{sector}")
+            if os.path.exists(out_fname):
+                return out_fname
+            else:
+                logger.error(f"Could not load {out_fname}")
 
+        logger.error(f"No selected proxies. Falling back to population_2015")
+        return os.path.join(
+            self.grid_dir,
+            "proxies",
+            "proxy-backup",
+            "population_2015.nc",
+        )
+
+    def load_year(self, species: str, sector: str, year: int) -> xr.DataArray:
+        fname = self.get(species, sector, year)
+        proxy = read_proxy_file(fname)
+        if proxy is None:
+            raise ValueError(f"Could not load {fname}. Invalid format?")
+        return proxy
+
+    def load(self, species: str, sector: str, years: List[int]) -> ProxyDataset:
         proxies = []
 
-        for y in years:
-            proxy = load_proxy(proxy_dir, selected_proxies[selected_proxies.year == y])
-            proxy["year"] = y
+        for year in years:
+            proxy = self.load_year(species, sector, year)
+            if proxy is None:
+                raise ValueError(
+                    f"Could not find an appropriate proxy {species}/{sector}/{year}"
+                )
+
+            proxy["year"] = year
 
             proxies.append(proxy)
 
-        return cls(xr.concat(proxies, dim="year"))
+        return ProxyDataset(xr.concat(proxies, dim="year"))
 
 
-class SeasonalityStore:
-    def __init__(self, grid_dir: str, mapping: pd.DataFrame):
-        self.grid_dir = grid_dir
-        self.mapping = mapping
-
-    def get(self, species: str, sector: str, year: int, allow_close=False):
-        match = self._find(species, sector, year, allow_close=allow_close)
+class SeasonalityStore(Store):
+    def get(self, species: str, sector: str, year: int):
+        match = self._find(species, sector, year)
 
         return os.path.join(self.grid_dir, "seasonality", match + ".nc")
 
-    def load(self, species: str, sector: str, year: int, allow_close=False):
+    def load(self, species: str, sector: str, year: int):
         # TODO: cache result
-        return read_proxy_file(self.get(species, sector, year, allow_close=allow_close))
-
-    def _find(self, species, sector, year, allow_close=False):
-        matching = self.mapping[
-            (self.mapping.em == species) & (self.mapping.sector == sector)
-        ]
-        if not len(matching):
-            raise ValueError(f"Could not find a match for {species}/{sector}")
-
-        exact = matching[matching.year == year]
-        if len(exact) == 1:
-            return matching.seasonality_file.squeeze()
-        elif allow_close:
-            #
-            return matching.seasonality_file.iloc[0]
-        else:
-            raise ValueError(f"Could not find a match for {species}/{sector}/{year}")
-
-    @classmethod
-    def load_from_csv(cls, grid_dir, fname):
-        mapping = pd.read_csv(fname)
-
-        return cls(grid_dir, mapping)
+        return read_proxy_file(self.get(species, sector, year))

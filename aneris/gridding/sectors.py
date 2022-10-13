@@ -2,7 +2,7 @@ from attrs import define
 from typing import Literal
 
 
-SECTOR_TYPE = Literal["ceds9", "ceds16"]
+SECTOR_TYPE = Literal["CEDS9", "CEDS16"]
 
 
 @define

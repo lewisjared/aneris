@@ -79,7 +79,7 @@ def convert_to_monthly(years, date_type=DatetimeNoLeap):
             "standard_name": "time",
             "axis": "T",
         },
-        encoding={"units": f"days since {years[0]}-01-01 00:00:00"},
+        encoding={"units": f"days since {int(years[0])}-01-01 00:00:00"},
     )
 
 
@@ -152,7 +152,7 @@ def grid_sector(
 
     # Calculate factor to go from Mt X year-1 km-2 to kg m-2 s-1
     flux_factor = convert_to_target_unit(
-        (emissions_units / ur("km^2")), f"kg m^-2 s^-1"
+        (emissions_units / ur(global_grid_area.attrs["units"])), f"kg m^-2 s^-1"
     )
     global_emissions = global_emissions / global_grid_area * flux_factor.m
     global_emissions.attrs["units"] = "kg m^-2 s^-1"

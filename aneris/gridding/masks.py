@@ -163,5 +163,5 @@ class MaskStore:
             grid_cell_areas(lon_centers[:2], lat_centers)[:, 0],
             coords=(lat_centers,),
             dims=("lat",),
-            attrs={"units": "km ^ 2"},
+            attrs={"units": "m ^ 2"},
         )
